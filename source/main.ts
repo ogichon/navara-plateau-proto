@@ -32,11 +32,13 @@ const initialPlace = params.get("place") ?? "tokyo";
 // Tokyo tilesets are verbatim from the official Navara example; the Shinjuku
 // tileset was located via the PLATEAU streaming catalog (GraphQL) and its
 // region (lng 139.673–139.744, lat 35.674–35.730) covers the Tocho.
-// v4 diagnosis note: in v1/v2 (setCamera), the framed center landed roughly
-// 800–1000 m toward the heading direction from the given lng/lat — i.e. the
-// given point behaves like the camera anchor, not the look target. Anchors
-// below are therefore placed that far *behind* each target (opposite the
-// heading). The on-screen camera readout (getCamera) verifies this.
+// Camera semantics (from the CameraPosition type doc in @navaramap/three
+// 0.2.1): lng/lat/height is the TARGET point; `distance` places the camera
+// that far from the target along its forward ray. So anchors below are the
+// landmarks themselves. (A v4 attempt with "behind-target" anchors was
+// wrong; v5 reverts to true targets and fixes the camera readout, which in
+// v4 called a non-existent getCamera() — the real APIs are
+// getCameraPositionLLE() / getCameraOrientation().)
 const PLACES: Record<
   string,
   { label: string; note: string; tilesets: string[]; camera: Record<string, number> }
@@ -48,8 +50,8 @@ const PLACES: Record<
       "https://assets.cms.plateau.reearth.io/assets/db/070026-aa27-431b-8d53-7cc6b03244f8/13101_chiyoda-ku_pref_2023_citygml_1_op_bldg_3dtiles_13101_chiyoda-ku_lod2_no_texture/tileset.json",
       "https://assets.cms.plateau.reearth.io/assets/4c/f2436a-e2be-40e2-83da-f1781f36e30b/13102_chuo-ku_pref_2023_citygml_1_op_bldg_3dtiles_13102_chuo-ku_lod2_no_texture/tileset.json",
     ],
-    // Target: Tokyo Station (139.7671, 35.6812). Anchor ~700 m behind (SW).
-    camera: { lng: 139.7625, lat: 35.6785, distance: 950, heading: 55, pitch: -42, roll: 0 },
+    // Target: Tokyo Station itself. Camera ends up SW of it, ~360 m up.
+    camera: { lng: 139.7671, lat: 35.6812, distance: 520, heading: 55, pitch: -48, roll: 0 },
   },
   tocho: {
     label: "都庁（新宿）",
@@ -57,8 +59,8 @@ const PLACES: Record<
     tilesets: [
       "https://assets.cms.plateau.reearth.io/assets/f0/840fc4-114c-41e4-9a65-67768efd3629/13104_shinjuku-ku_pref_2023_citygml_2_op_bldg_3dtiles_13104_shinjuku-ku_lod2_no_texture/tileset.json",
     ],
-    // Target: Tocho (139.6917, 35.6896). Anchor ~800 m behind (SW).
-    camera: { lng: 139.6859, lat: 35.6841, distance: 1000, heading: 40, pitch: -40, roll: 0 },
+    // Target: Tocho itself. Camera ends up SW (Central Park side), ~400 m up.
+    camera: { lng: 139.6917, lat: 35.6896, distance: 560, heading: 40, pitch: -46, roll: 0 },
   },
 };
 const place = PLACES[initialPlace] ?? PLACES.tokyo;
@@ -136,10 +138,12 @@ async function main() {
   const camEl = document.getElementById("cam");
   const showCam = () => {
     try {
-      const c: any = view.getCamera();
-      const txt = `cam lng ${(+c.lng).toFixed(5)} / lat ${(+c.lat).toFixed(5)} / h ${Math.round(+c.height)}m / hd ${Math.round(+c.heading)}° / pitch ${Math.round(+c.pitch)}°`;
+      const lle: any = (view as any).getCameraPositionLLE?.();
+      const ori: any = (view as any).getCameraOrientation?.();
+      if (!lle || !ori) return;
+      const txt = `cam lng ${(+lle[0]).toFixed(5)} / lat ${(+lle[1]).toFixed(5)} / h ${Math.round(+lle[2])}m / hd ${Math.round(+ori.heading)}° / pitch ${Math.round(+ori.pitch)}°`;
       if (camEl) camEl.textContent = txt;
-      (window as any).__camera = c;
+      (window as any).__camera = { lle: Array.from(lle), heading: ori.heading, pitch: ori.pitch };
     } catch {
       /* readout is best-effort */
     }
