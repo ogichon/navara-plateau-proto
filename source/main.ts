@@ -141,12 +141,15 @@ async function main() {
   const camEl = document.getElementById("cam");
   const showCam = () => {
     try {
-      const lle: any = (view as any).getCameraPositionLLE?.();
-      const ori: any = (view as any).getCameraOrientation?.();
-      if (!lle || !ori) return;
-      const txt = `cam lng ${(+lle[0]).toFixed(5)} / lat ${(+lle[1]).toFixed(5)} / h ${Math.round(+lle[2])}m / hd ${Math.round(+ori.heading)}° / pitch ${Math.round(+ori.pitch)}°`;
+      // Correct access path (v7): view.camera.positionGeographic / .orientation.
+      // (v4–v6 tried a non-existent view.getCamera() and Core-internal getters.)
+      const cam: any = (view as any).camera;
+      const pos = cam?.positionGeographic;
+      const ori = cam?.orientation;
+      if (!pos || !ori) return;
+      const txt = `cam lng ${(+pos.lng).toFixed(5)} / lat ${(+pos.lat).toFixed(5)} / h ${Math.round(+pos.height)}m / hd ${Math.round(+ori.heading)}° / pitch ${Math.round(+ori.pitch)}°`;
       if (camEl) camEl.textContent = txt;
-      (window as any).__camera = { lle: Array.from(lle), heading: ori.heading, pitch: ori.pitch };
+      (window as any).__camera = { pos, heading: ori.heading, pitch: ori.pitch };
     } catch {
       /* readout is best-effort */
     }
