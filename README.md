@@ -101,3 +101,18 @@ UI: buttons switch the sun via `view.atmosphere.date` — 昼 12:00 / 夕 17:40 
   buildings; verification pending in the user's real Chrome (the agent
   browser's tile streaming has degraded to the point that even raster photo
   tiles no longer arrive within 150 s; only DOM readouts are reliable there).
+
+## ROOT CAUSE FOUND + FIXED (v11, 2026-11-05)
+The PLATEAU B3DM tiles require KHR_draco_mesh_compression (extensionsRequired
+in the embedded glTF). Navara's runtime fetches its Draco decoder wasm
+(`draco_decoder-DsQ12WqX.wasm`, shipped in @navaramap/three/dist/assets/)
+relative to the worker/module URL — but Vite does not copy that file when
+bundling the package, so the fetch 404'd, Draco decoding never started, and
+every building tile failed SILENTLY (terrain/raster don't use Draco, which
+is why only the buildings were missing — in the prototype, in plain mode,
+and in the verbatim official example alike). Data reachability from the
+user's browser was separately proven (tileset/root/leaf all HTTP 200), and
+camera math was proven exact via the readout. Fix: vite.config.ts now has a
+closeBundle plugin copying the package's runtime wasm assets
+(draco_decoder + navara_wasm_font_worker_bg) into dist/assets/. Verified
+live: the decoder URL now returns HTTP 200 application/wasm.
