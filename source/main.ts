@@ -120,16 +120,18 @@ async function main() {
   } as any);
   const photoLayer = view.addLayer({ type: "raster", source: photoSource } as any);
 
+  const buildingLayers: any[] = [];
   for (const url of place.tilesets) {
     const src = view.addSource({ type: "3d-tiles", url } as any);
     // NOTE: layer colors must be Color instances (official example parity).
     // (The actual cause of the invisible buildings in v1–v10 was the missing
     // Draco decoder wasm in the build output — see README/vite.config.ts.)
-    view.addLayer({
+    const layer = view.addLayer({
       type: "3d-tiles",
       source: src,
       model: { color: new Color().setHex(0xffffff), metalness: 0, roughness: 1 },
     } as any);
+    buildingLayers.push(layer);
   }
 
   view.attribution?.add([
@@ -285,6 +287,110 @@ async function main() {
     };
     tick();
     tlTimer = setInterval(tick, TICK_MS);
+  });
+
+  // ---- ③ Impact styling: per-feature colors driven by PLATEAU batch
+  // attributes (verified in the B3DM batch table: "bldg:measuredHeight" is a
+  // binary DOUBLE; flood depths are plain numbers under keys ending in
+  // "_浸水深", one per river basin / storm-surge scenario).
+  type StyleMode = "normal" | "rainbow" | "flood";
+  let styleMode: StyleMode = "normal";
+  const heightOf = (p: Record<string, unknown> | undefined): number => {
+    const v = (p?.["bldg:measuredHeight"] ?? p?.["height"]) as number;
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  const floodDepthOf = (p: Record<string, unknown> | undefined): number => {
+    if (!p) return 0;
+    let max = 0;
+    for (const [k, v] of Object.entries(p)) {
+      if (k.endsWith("_浸水深") && typeof v === "number" && v > max) max = v;
+    }
+    return max;
+  };
+  const RAINBOW: [number, number][] = [
+    [0, 0x7b2ff7],
+    [15, 0x2f6bff],
+    [30, 0x00c2ff],
+    [50, 0x00e676],
+    [80, 0xf9e04b],
+    [120, 0xff9100],
+    [170, 0xff2d78],
+    [240, 0xff1744],
+  ];
+  const grad = (stops: [number, number][], v: number): number => {
+    if (v <= stops[0][0]) return stops[0][1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [v0, c0] = stops[i];
+      const [v1, c1] = stops[i + 1];
+      if (v <= v1) return lerpHex(c0, c1, (v - v0) / (v1 - v0 || 1));
+    }
+    return stops[stops.length - 1][1];
+  };
+  const styleFeature = ({ properties }: any) => {
+    if (styleMode === "rainbow") {
+      const c = new Color().setHex(grad(RAINBOW, heightOf(properties)));
+      return { color: c, emissive: c, emissiveIntensity: 0.35, opacity: 1 };
+    }
+    if (styleMode === "flood") {
+      const d = floodDepthOf(properties);
+      const hex =
+        d <= 0 ? 0x2e3a4a : d < 0.5 ? 0x39c2d7 : d < 1 ? 0x1e88e5 : d < 2 ? 0x3949ab : d < 3.5 ? 0x8e24aa : 0xff1744;
+      const c = new Color().setHex(hex);
+      return {
+        color: c,
+        emissive: c,
+        emissiveIntensity: d >= 2 ? 0.8 : 0.15,
+        opacity: d <= 0 ? 0.5 : 1,
+      };
+    }
+    return {
+      color: new Color().setHex(0xffffff),
+      emissive: new Color().setHex(0x000000),
+      emissiveIntensity: 0,
+      opacity: 1,
+    };
+  };
+  const refreshStyles = () => {
+    for (const l of buildingLayers) {
+      try {
+        l.forceUpdate();
+      } catch {
+        /* best effort */
+      }
+    }
+  };
+  for (const l of buildingLayers) {
+    try {
+      l.on("featureUpdated", (params: any) => {
+        const ev = params?.evaluator ?? params;
+        ev.evaluate(styleFeature);
+      });
+    } catch (e) {
+      console.warn("featureUpdated hook failed", e);
+    }
+  }
+  const setStyleMode = (mode: StyleMode) => {
+    styleMode = mode;
+    document
+      .querySelectorAll("button[data-style]")
+      .forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.style === mode));
+    if (mode === "flood") {
+      // Drowning-city mood: dusk sun + deep-blue ground.
+      stopTimelapse();
+      applyGrading(new Date("2026-11-05T18:20:00+09:00"), 0x27405e, 0.35, 1.25);
+      setStatus("🌊 浸水モード：浸水深（河川・高潮の想定最大値）で色分け。半透明=想定なし、赤=3.5m以上");
+    } else {
+      applyTime((window as any).__timeKey ?? "day");
+      setStatus(
+        mode === "rainbow"
+          ? "🌈 カラフルモード：建物の高さ（実測）で色分け。紫=低層 → 赤=超高層"
+          : "通常モード（白モデル）",
+      );
+    }
+    refreshStyles();
+  };
+  document.querySelectorAll("button[data-style]").forEach((b) => {
+    b.addEventListener("click", () => setStyleMode((b as HTMLElement).dataset.style as StyleMode));
   });
 
   document.getElementById("capture")!.addEventListener("click", () => {
