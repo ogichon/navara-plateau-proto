@@ -109,10 +109,13 @@ async function main() {
 
   for (const url of place.tilesets) {
     const src = view.addSource({ type: "3d-tiles", url } as any);
+    // NOTE: layer colors must be Color instances (per the official buildings
+    // example). Passing a raw hex number here is the prime suspect for the
+    // 3D Tiles layer silently rendering nothing in v1–v5.
     view.addLayer({
       type: "3d-tiles",
       source: src,
-      model: { color: 0xffffff, metalness: 0, roughness: 1 },
+      model: { color: new Color().setHex(0xffffff), metalness: 0, roughness: 1 },
     } as any);
   }
 
@@ -165,7 +168,7 @@ async function main() {
     const t = TIMES[key];
     if (!t) return;
     view.atmosphere.date = new Date(t.iso);
-    photoLayer.update({ raster: { color: t.groundTint } } as any);
+    photoLayer.update({ raster: { color: new Color().setHex(t.groundTint) } } as any);
     ambient.update({ ambient: { intensity: t.ambient } } as any);
     view.toneMappingExposure = t.exposure;
     view.forceUpdate();
