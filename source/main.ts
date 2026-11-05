@@ -122,9 +122,9 @@ async function main() {
 
   for (const url of place.tilesets) {
     const src = view.addSource({ type: "3d-tiles", url } as any);
-    // NOTE: layer colors must be Color instances (per the official buildings
-    // example). Passing a raw hex number here is the prime suspect for the
-    // 3D Tiles layer silently rendering nothing in v1–v5.
+    // NOTE: layer colors must be Color instances (official example parity).
+    // (The actual cause of the invisible buildings in v1–v10 was the missing
+    // Draco decoder wasm in the build output — see README/vite.config.ts.)
     view.addLayer({
       type: "3d-tiles",
       source: src,
@@ -180,14 +180,24 @@ async function main() {
   const h1 = document.querySelector("#ui h1");
   if (h1) h1.textContent = `Navara × PLATEAU — ${place.label}`;
 
+  const applyGrading = (
+    date: Date,
+    tintHex: number,
+    ambientIntensity: number,
+    exposure: number,
+  ) => {
+    view.atmosphere.date = date;
+    photoLayer.update({ raster: { color: new Color().setHex(tintHex) } } as any);
+    ambient.update({ ambient: { intensity: ambientIntensity } } as any);
+    view.toneMappingExposure = exposure;
+    view.forceUpdate();
+  };
+
   const applyTime = (key: string) => {
     const t = TIMES[key];
     if (!t) return;
-    view.atmosphere.date = new Date(t.iso);
-    photoLayer.update({ raster: { color: new Color().setHex(t.groundTint) } } as any);
-    ambient.update({ ambient: { intensity: t.ambient } } as any);
-    view.toneMappingExposure = t.exposure;
-    view.forceUpdate();
+    stopTimelapse();
+    applyGrading(new Date(t.iso), t.groundTint, t.ambient, t.exposure);
     document
       .querySelectorAll("button[data-time]")
       .forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.time === key));
@@ -199,6 +209,83 @@ async function main() {
     b.addEventListener("click", () => applyTime((b as HTMLElement).dataset.time!));
   });
   applyTime(initialTime);
+
+  // ---- ② Time-lapse: sweep the sun 04:30 → 21:00 JST with graded keyframes.
+  type Key = { h: number; tint: number; ambient: number; exposure: number };
+  const KEYS: Key[] = [
+    { h: 4.5, tint: 0x51628c, ambient: 0.6, exposure: 1.7 },
+    { h: 6.0, tint: 0xc7a184, ambient: 0.3, exposure: 1.25 },
+    { h: 7.5, tint: 0xe8ddcb, ambient: 0.1, exposure: 1.05 },
+    { h: 12.0, tint: 0xffffff, ambient: 0, exposure: 1.0 },
+    { h: 16.5, tint: 0xf5e3c2, ambient: 0.05, exposure: 1.0 },
+    { h: 17.67, tint: 0xd8a878, ambient: 0.15, exposure: 1.05 },
+    { h: 19.0, tint: 0x5d6c96, ambient: 0.45, exposure: 1.45 },
+    { h: 21.0, tint: 0x51628c, ambient: 0.6, exposure: 1.7 },
+  ];
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const lerpHex = (a: number, b: number, t: number) => {
+    const ch = (shift: number) =>
+      Math.round(lerp((a >> shift) & 0xff, (b >> shift) & 0xff, t));
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+  };
+  const gradingAt = (h: number): Key => {
+    for (let i = 0; i < KEYS.length - 1; i++) {
+      const k0 = KEYS[i];
+      const k1 = KEYS[i + 1];
+      if (h >= k0.h && h <= k1.h) {
+        const t = (h - k0.h) / (k1.h - k0.h || 1);
+        return {
+          h,
+          tint: lerpHex(k0.tint, k1.tint, t),
+          ambient: lerp(k0.ambient, k1.ambient, t),
+          exposure: lerp(k0.exposure, k1.exposure, t),
+        };
+      }
+    }
+    return KEYS[KEYS.length - 1];
+  };
+  const dateAt = (h: number) => {
+    const hh = Math.floor(h);
+    const mm = Math.floor((h - hh) * 60);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return new Date(`2026-11-05T${p(hh)}:${p(mm)}:00+09:00`);
+  };
+  let tlTimer: ReturnType<typeof setInterval> | null = null;
+  const tlButton = document.getElementById("timelapse");
+  function stopTimelapse() {
+    if (tlTimer) {
+      clearInterval(tlTimer);
+      tlTimer = null;
+      if (tlButton) tlButton.textContent = "▶ タイムラプス";
+    }
+  }
+  tlButton?.addEventListener("click", () => {
+    if (tlTimer) {
+      stopTimelapse();
+      setStatus("タイムラプスを停止しました");
+      return;
+    }
+    let h = KEYS[0].h;
+    const STEP_H = 0.25; // 15 min of scene time per tick
+    const TICK_MS = 450; // ≈34 s for the full sweep
+    if (tlButton) tlButton.textContent = "⏸ 停止";
+    const tick = () => {
+      const g = gradingAt(h);
+      applyGrading(dateAt(h), g.tint, g.ambient, g.exposure);
+      const hh = Math.floor(h);
+      const mm = Math.floor((h - hh) * 60);
+      const label = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} JST`;
+      setStatus(`タイムラプス再生中… ${label}`);
+      (window as any).__timeLabel = label;
+      h += STEP_H;
+      if (h > KEYS[KEYS.length - 1].h) {
+        stopTimelapse();
+        setStatus("タイムラプス完了（夜 21:00 JST）");
+      }
+    };
+    tick();
+    tlTimer = setInterval(tick, TICK_MS);
+  });
 
   document.getElementById("capture")!.addEventListener("click", () => {
     const canvas = container.querySelector("canvas");
