@@ -126,3 +126,11 @@ night grading works (ambient + exposure + ground tint). Blender remains
 better for textured photoreal stills, but it cost ~7.5 min/frame and blind
 camera work; Navara iterates in seconds. Next in sequence: ② time/weather
 time-lapse, then ③ attribute-driven styling (FeatureEvaluator), ④ PersonView.
+
+## v12 — idea ② time-lapse (2026-11-05)
+Added a ▶ タイムラプス button: sweeps the sun 04:30 → 21:00 JST over ~34 s
+(15 min of scene time per 450 ms tick), interpolating ground tint, ambient
+intensity and exposure across 8 grading keyframes (night → dawn → morning →
+noon → afternoon → sunset → dusk → night). Time buttons stop the sweep.
+Weather (clouds/rain) is not yet wired — the photoreal scene's cloud controls
+are the next investigation inside idea ②.
