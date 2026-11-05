@@ -7,11 +7,12 @@ const assert = require('node:assert/strict');
 const source = stripTypeScriptTypes(readFileSync('src/underwater.ts', 'utf8').replace(/^import .*;\n/gm, ''));
 async function check(query, expectedPlace, initial) {
   let now = 0, timer, interval, captures = 0, camera, forces = 0;
-  const layers = [], effects = [], meshes = [], listeners = {};
+  const layers = [], effects = [], meshes = [], lights = [], listeners = {};
   class Element {
     listeners = {}; textContent = ''; attrs = {};
     addEventListener(name, fn) { this.listeners[name] = fn; }
     setAttribute(name, value) { this.attrs[name] = value; }
+    insertAdjacentElement(position, element) { assert.equal(position, "afterend"); ids[element.id] = element; }
     click() { this.listeners.click?.(); }
     querySelector() { return { toDataURL: () => { captures++; return 'data:image/png;base64,'; } }; }
   }
@@ -21,7 +22,7 @@ async function check(query, expectedPlace, initial) {
   class View {
     atmosphere = {}; attribution = { add() {} };
     addPlugin() {} async init() {} forceUpdate() {} setCamera(value) { camera = value; }
-    addLight(value) { return handle(value); }
+    addLight(value) { const h = handle(value); lights.push(h); return h; }
     addEffect(value) { const h = handle(value); effects.push(h); return h; }
     addMesh(value) { const h = handle(value); meshes.push(h); return h; }
     addSource(value) { return value; }
@@ -35,6 +36,41 @@ async function check(query, expectedPlace, initial) {
   });
   vm.runInContext(source, context); await new Promise(resolve => setImmediate(resolve));
   assert.equal(context.window.__error, undefined); assert.equal(context.window.__ready, true);
+  const view = context.window.__view;
+  const photo = layers.find(h => h.config.type === 'raster');
+  const luminance = hex => [16,8,0].map(shift => {
+    const c = ((hex >> shift) & 255) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }).reduce((s,c,i) => s + c * [0.2126,0.7152,0.0722][i],0);
+  assert.ok(luminance(photo.config.raster.color.hex) >= luminance(0x51628c));
+  // Hue preservation (review Low, 2026-11-05): the lifted tint must stay in
+  // the original blue family of 0x27405e (B > G > R, similar channel ratios);
+  // a same-luminance hue swap (e.g. to red) must fail.
+  const [tr, tg, tb] = [16, 8, 0].map(shift => (photo.config.raster.color.hex >> shift) & 255);
+  assert.ok(tb > tg && tg > tr, 'tint hue: expected B > G > R');
+  assert.ok(tb / tr >= 2.0 && tb / tr <= 2.8, 'tint hue: B/R ratio drifted');
+  assert.ok(tg / tr >= 1.4 && tg / tr <= 1.9, 'tint hue: G/R ratio drifted');
+  assert.ok(lights[0].config.ambient.intensity >= 0.6);
+  assert.ok(view.toneMappingExposure >= 1.6);
+  const checkPhoto = () => {
+    const original = JSON.stringify(photo.updates.at(-1) ?? { raster: photo.config.raster });
+    const snapshot = () => JSON.stringify({ camera, lights, effects, meshes, forces,
+      layers: layers.filter(h => h !== photo), atmosphere: view.atmosphere, exposure: view.toneMappingExposure,
+      timer: !!timer, now });
+    const before = snapshot();
+    ids['basemap-check'].click();
+    assert.equal(photo.updates.at(-1).raster.color.hex,0xffffff);
+    assert.equal(photo.updates.at(-1).raster.opacity,1);
+    assert.match(ids.status.textContent,/ベースマップ確認中/);
+    assert.equal(ids['basemap-check'].attrs['aria-pressed'],'true');
+    assert.equal(snapshot(),before,'ON changes only photo parameters');
+    ids['basemap-check'].click();
+    assert.equal(JSON.stringify(photo.updates.at(-1)),original,'OFF fully restores photo grade');
+    assert.equal(snapshot(),before,'OFF preserves other parameters and animation');
+    assert.equal(ids['basemap-check'].attrs['aria-pressed'],'false');
+    assert.doesNotMatch(ids.status.textContent,/ベースマップ確認中/);
+  };
+  checkPhoto();
   const main = readFileSync('src/main.ts','utf8');
   const cameraLiteral = expectedPlace === 'tocho' ? 'lng: 139.6917, lat: 35.6896, distance: 560, heading: 40, pitch: -46, roll: 0' : 'lng: 139.7671, lat: 35.6812, distance: 520, heading: 55, pitch: -48, roll: 0';
   assert.ok(main.includes(cameraLiteral)); assert.ok(readFileSync('src/underwater.ts','utf8').includes(cameraLiteral));
@@ -42,7 +78,9 @@ async function check(query, expectedPlace, initial) {
   const plane = meshes[0]; assert.equal(meshes.length,1);
   assert.equal(plane.config.geodetic.height,initial); assert.equal(plane.config.geodetic.heightReference,'ellipsoid');
   assert.equal(plane.config.rotation.x,-Math.PI/2); assert.equal(plane.config.plane.opacity,0.55);
-  assert.equal(plane.config.plane.width,4000); assert.equal(plane.config.plane.transparent,true); assert.equal(plane.config.effectIds,undefined);
+  assert.equal(plane.config.plane.height,8000);
+  assert.equal(plane.config.plane.color.hex,0x123d4a);
+  assert.equal(plane.config.plane.width,8000); assert.equal(plane.config.plane.transparent,true); assert.equal(plane.config.effectIds,undefined);
   assert.equal(effects.find(h => h.config.clouds).config.clouds.coverage,0.85);
   assert.ok(!effects.some(h => h.config.ssr));
   const buildings = layers.filter(h => h.config.type === '3d-tiles');
@@ -62,6 +100,7 @@ async function check(query, expectedPlace, initial) {
   const initialForces = forces;
   ids.rise.click(); assert.equal(lastHeight(),initial-12); assert.equal(interval,100);
   now=10000; timer(); assert.equal(lastHeight(),initial+0.5);
+  checkPhoto();
   ids.rise.click(); assert.equal(lastHeight(),initial-12);
   now=30000; timer(); assert.equal(lastHeight(),initial+13); assert.equal(timer,undefined);
   assert.match(ids.status.textContent,/完了/); assert.equal(forces,initialForces,'water never reevaluates buildings');

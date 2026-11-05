@@ -23,7 +23,9 @@ async function check(place) {
   class Element {
     constructor(dataset = {}) { this.dataset = dataset; this.listeners = {}; this.classList = { toggle() {} }; }
     addEventListener(name, fn) { this.listeners[name] = fn; }
-    setAttribute() {}
+    attrs = {};
+    setAttribute(name, value) { this.attrs[name] = value; }
+    insertAdjacentElement(position, element) { assert.equal(position, "afterend"); ids[element.id] = element; }
     click() { this.listeners.click?.(); }
     querySelector() { return { toDataURL: () => { captured = true; return 'data:image/png;base64,'; } }; }
   }
@@ -50,7 +52,7 @@ async function check(place) {
   const assertGrade = before => {
     const view = context.window.__view;
     const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
-    assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T12:00:00.000Z');
+    assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T11:00:00.000Z');
     if (before) {
       assert.equal(tint, 0xd8a878, 'Before tint unchanged');
       assert.equal(ambientIntensity, 0.15, 'Before ambient unchanged');
@@ -61,6 +63,26 @@ async function check(place) {
       assert.ok(view.toneMappingExposure >= 1.6, 'After exposure floor');
     }
   };
+  const checkPhoto = () => {
+    const view = context.window.__view;
+    const photo = layers.find(layer => layer.type === 'raster');
+    const original = JSON.stringify(photo.lastUpdate);
+    const untouched = () => JSON.stringify({ date: view.atmosphere.date, exposure: view.toneMappingExposure,
+      ambientIntensity, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
+      style: typeof style === 'function' ? style({ properties: p }) : null });
+    const before = untouched();
+    ids['basemap-check'].click();
+    assert.equal(photo.lastUpdate.raster.color.hex, 0xffffff);
+    assert.equal(photo.lastUpdate.raster.opacity, 1);
+    assert.equal(ids['basemap-check'].attrs['aria-pressed'], 'true');
+    assert.match(ids.status.textContent, /ベースマップ確認中/);
+    assert.equal(untouched(), before, 'ON changes only photo parameters');
+    ids['basemap-check'].click();
+    assert.equal(JSON.stringify(photo.lastUpdate), original, 'OFF restores complete photo grade');
+    assert.equal(untouched(), before, 'OFF preserves scene and animation');
+    assert.equal(ids['basemap-check'].attrs['aria-pressed'], 'false');
+    assert.doesNotMatch(ids.status.textContent, /ベースマップ確認中/);
+  };
   assertGrade(true);
   assert.match(ids.status.textContent, /Before/);
   const building = layers.find(l => l.type === '3d-tiles');
@@ -70,9 +92,11 @@ async function check(place) {
   const ev = { evaluate: fn => { style = fn; } };
   building.listeners.featureUpdated({ featureSetId: 1n, evaluator: ev });
   assert.equal(style({ properties: p }).color.hex, 0xffffff);
+  checkPhoto();
   for (const button of looks.slice(1)) {
     button.click();
     assertGrade(false);
+    checkPhoto();
     const palette = palettes[button.dataset.look];
     assert.equal(style({ properties: p }).color.hex, palette.base, 'building base unchanged');
     for (const [height, color] of palette.stops) {
@@ -84,6 +108,10 @@ async function check(place) {
     assert.notEqual(style({ properties: p }).color.hex, 0xffffff);
     assert.ok(style({ properties: p }).emissiveIntensity > 0);
   }
+  ids['basemap-check'].click();
+  looks[1].click(); looks[2].click(); looks[0].click();
+  assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex, 0xffffff);
+  ids['basemap-check'].click(); assertGrade(true);
   assert.equal(cameraCalls, 1, 'art comparisons preserve camera');
   ids.awaken.click();
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
@@ -92,6 +120,7 @@ async function check(place) {
   now = 500 + 240 / 900 * 1000; timer();
   assertGrade(false);
   assert.match(ids.status.textContent, /覚醒中/);
+  checkPhoto();
   assert.ok(style({ properties: p }).emissiveIntensity > 3.9, 'front flashes at landmark');
   assert.equal(style({ properties: { ...p, _y: origin[1]+0.05 } }).emissiveIntensity, 0, 'distant buildings wait');
   assert.equal(style({ properties: {} }).emissiveIntensity, 0);

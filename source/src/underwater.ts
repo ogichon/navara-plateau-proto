@@ -36,13 +36,15 @@ const parsedWater = requestedWater?.trim() ? Number(requestedWater) : NaN;
 const initialWater = Number.isFinite(parsedWater) ? parsedWater : INITIAL_WATER[placeKey];
 const color = (hex: number) => new Color().setHex(hex);
 const statusEl = document.getElementById("status")!;
-function status(state: string, water: number) {
-  const text = `${state}｜楕円体高 ${water.toFixed(1)}m｜地形交差・透過・描画は目視未検証`;
+function status(state: string, water: number, basemapCheck = false) {
+  const text = `${state}${basemapCheck ? "／ベースマップ確認中" : ""}｜楕円体高 ${water.toFixed(1)}m｜地形交差・透過・描画は目視未検証`;
   statusEl.textContent = text;
   (window as any).__status = text;
 }
 
 async function main() {
+  let basemapCheck = false;
+  const reportStatus = (state: string, water: number) => status(state, water, basemapCheck);
   let water = initialWater;
   let timer: ReturnType<typeof setInterval> | null = null;
   let rainOn = false;
@@ -53,12 +55,12 @@ async function main() {
   (window as any).__view = view;
   const plugin = new DefaultPlugin();
   view.addPlugin(plugin);
-  status("WASM初期化中", water);
+  reportStatus("WASM初期化中", water);
   await view.init();
   const scene = plugin.addDefaultPhotorealScene();
   scene.sun.update({ sun: { castShadow: true } } as any);
-  view.addLight({ ambient: { intensity: 0.35, color: color(0x93a7cc) } } as any);
-  view.toneMappingExposure = 1.25;
+  view.addLight({ ambient: { intensity: 0.6, color: color(0x93a7cc) } } as any);
+  view.toneMappingExposure = 1.6;
   view.addEffect({ clouds: { coverage: 0.85, lightShafts: true, haze: true } } as any);
   view.addEffect({ id: "underwater-bloom", selectiveBloom: {
     strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2,
@@ -73,7 +75,21 @@ async function main() {
     terrain: { castShadow: true, receiveShadow: true } } as any);
   const photo = view.addSource({ type: "raster-tile",
     url: "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", maxZoom: 18 } as any);
-  view.addLayer({ type: "raster", source: photo, raster: { color: color(0x27405e) } } as any);
+  // Scale the original blue RGB ratios by ~1.6; keep hue above the night floor.
+  const photoTint = 0x3e6696;
+  const photoLayer = view.addLayer({ type: "raster", source: photo,
+    raster: { color: color(photoTint), opacity: 1 } } as any);
+  const photoButton = document.createElement("button");
+  photoButton.id = "basemap-check";
+  photoButton.textContent = "ベースマップ確認";
+  photoButton.setAttribute("aria-pressed", "false");
+  document.getElementById("capture")!.insertAdjacentElement("afterend", photoButton);
+  photoButton.addEventListener("click", () => {
+    basemapCheck = !basemapCheck;
+    photoButton.setAttribute("aria-pressed", String(basemapCheck));
+    photoLayer.update({ raster: { color: color(basemapCheck ? 0xffffff : photoTint), opacity: 1 } } as any);
+    view.forceUpdate(); reportStatus(state, water);
+  });
 
   // One callback owns every building style field, including explicit resets.
   const styleFeature = ({ properties }: any) => {
@@ -96,7 +112,7 @@ async function main() {
   const plane = view.addMesh({
     geodetic: { lng: place.camera.lng, lat: place.camera.lat, height: water, heightReference: "ellipsoid" },
     rotation: { x: -Math.PI / 2, y: 0, z: 0 },
-    plane: { width: 4000, height: 4000, color: color(0x123d4a), transparent: true,
+    plane: { width: 8000, height: 8000, color: color(0x123d4a), transparent: true,
       opacity: 0.55, castShadow: false, receiveShadow: false },
   } as any);
   view.attribution?.add([
@@ -110,7 +126,7 @@ async function main() {
     water = next;
     plane.update({ geodetic: { height: water } });
     view.forceUpdate();
-    status(state, water);
+    reportStatus(state, water);
   }
   function stopRise() {
     if (timer !== null) clearInterval(timer);
@@ -139,7 +155,7 @@ async function main() {
     const button = document.getElementById("rain")!;
     button.setAttribute("aria-pressed", String(rainOn));
     button.textContent = rainOn ? "水滴 ON" : "水滴 OFF";
-    view.forceUpdate(); status(`${state}／水滴${rainOn ? "ON" : "OFF"}`, water);
+    view.forceUpdate(); reportStatus(`${state}／水滴${rainOn ? "ON" : "OFF"}`, water);
   });
   document.getElementById("capture")!.addEventListener("click", () => {
     try {
@@ -148,18 +164,18 @@ async function main() {
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
       link.download = `tokyo-underwater-${placeKey}-${water.toFixed(1)}m.png`;
-      link.click(); status("キャプチャ保存", water);
-    } catch (error) { status(`キャプチャ失敗: ${error}`, water); }
+      link.click(); reportStatus("キャプチャ保存", water);
+    } catch (error) { reportStatus(`キャプチャ失敗: ${error}`, water); }
   });
   window.addEventListener("pagehide", stopRise);
   window.addEventListener("pageshow", () => {
     if (state !== "水位上昇中") return;
     stopRise();
     state = "水位上昇中断";
-    status(state, water);
+    reportStatus(state, water);
   });
   state = "準備完了・タイル順次読み込み";
-  status(state, water);
+  reportStatus(state, water);
   (window as any).__ready = true;
 }
 main().catch(error => {

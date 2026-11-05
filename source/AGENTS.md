@@ -54,7 +54,7 @@ Navara × PLATEAU × Creative Coding で、**現実の都市を素材に、誰�
 - 属性: 高さ=`bldg:measuredHeight`、浸水深=キー末尾 `_浸水深` の数値群、建物重心=`_x`/`_y`（経度/緯度）。スタイリングは FeatureEvaluator（layer.on("featureUpdated") + evaluate、再評価は layer.forceUpdate()）。
 
 ## 作業管理
-- 正本: GitHub Issues（repo: yuki-ogihara/navara-plateau-proto）。実験は Issue 単位で、目的・仮説・期待する見た目・実現方法・成功条件・実装状況・公開URL・判定・次アクションを記録する。
+- 正本: GitHub Issues（repo: ogichon/navara-plateau-proto）。実験は Issue 単位で、目的・仮説・期待する見た目・実現方法・成功条件・実装状況・公開URL・判定・次アクションを記録する。
 - ローカル dev repo: `~/workspace/navara-tocho-proto/`。実験はブランチ＋worktree を分離する（`~/workspace/navara-wt-<name>/`）。同じファイルを複数エージェントが同時編集しない。**独立レビューを通過した実験はローカル main へマージし、全ページを1回のビルドで統合してからデプロイする**（2026-11-05 に AWAKENING / UNDERWATER を合流済み。ブリーフ類は docs/briefs/ に集約）
 - ドキュメント: `docs/creative-direction.md`（方向性・評価）、`docs/roadmap.md`（優先順位）、`docs/architecture.md`（技術知見）、`docs/experiments/`（実験記録）、`HANDOVER.md`（v14までの全経緯）。
 

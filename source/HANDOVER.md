@@ -12,8 +12,8 @@
   ④ PersonView 一人称散歩 → 未着手
 
 ## 2. 成果物
-- 公開ページ: https://yuki-ogihara.github.io/navara-plateau-proto/ （`?place=tokyo` 既定 / `?place=tocho`、`?time=day|sunset|night`、`?mode=plain` は公式構成の診断モード、`/official.html` は公式サンプルの原文コピー＋自己診断つき）
-- GitHub: 公開リポジトリ `yuki-ogihara/navara-plateau-proto`（無料プランのため公開。秘密情報なし。GitHub Pro にはしない方針は既定）
+- 公開ページ: https://ogichon.github.io/navara-plateau-proto/ （`?place=tokyo` 既定 / `?place=tocho`、`?time=day|sunset|night`、`?mode=plain` は公式構成の診断モード、`/official.html` は公式サンプルの原文コピー＋自己診断つき）
+- GitHub: 公開リポジトリ `ogichon/navara-plateau-proto`（無料プランのため公開。秘密情報なし。GitHub Pro にはしない方針は既定）
 - ローカル: `~/workspace/navara-tocho-proto/`（`src/main.ts` が本体、`src/official.ts`、`index.html`、`official.html`、`vite.config.ts`、`README.md` に全経緯・全バージョンの検証記録、`deploy/` が Pages 用 git リポジトリ、`pkg/` に npm tarball 展開物）
 - スタック: `@navaramap/three@0.2.1`、`@navaramap/three-default-plugin@0.2.1`、`@navaramap/three-plugins@0.2.1`、three 0.187.0、Vite 8.3.5、Node 24
 

@@ -56,6 +56,7 @@ const gradient = (stops: number[][], h: number) => {
 const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value);
 
 async function main() {
+  let basemapCheck = false;
   let direction: Direction = "cyberpunk";
   let phase: Phase = "before";
   let radius = -240;
@@ -152,17 +153,32 @@ async function main() {
   document.title = `TOKYO // AWAKENING — ${place.label}`;
   const report = () => {
     const state = phase === "before" ? "Before — 夕景 / 白モデル" : `${LOOKS[direction].label} — ${phase === "wave" ? `覚醒中 ${Math.max(0, Math.min(100, Math.round(radius / CITY_RADIUS * 100)))}%` : phase === "complete" ? "完了" : "After"}`;
-    setStatus(`${place.label} / ${state}`);
+    setStatus(`${place.label} / ${state}${basemapCheck ? " / ベースマップ確認中" : ""}`);
     document.querySelectorAll<HTMLButtonElement>("[data-look]").forEach(b => {
       const active = b.dataset.look === (phase === "before" ? "before" : direction);
       b.classList.toggle("active", active);
       b.setAttribute("aria-pressed", String(active));
     });
   };
+  // Raster-only diagnostic: never change scene lighting or building evaluation.
+  const applyPhoto = () => photoLayer.update({ raster: {
+    color: new Color().setHex(basemapCheck ? 0xffffff : phase === "before" ? 0xd8a878 : LOOKS[direction].tint),
+    opacity: 1,
+  } } as any);
+  const photoButton = document.createElement("button");
+  photoButton.id = "basemap-check";
+  photoButton.textContent = "ベースマップ確認";
+  photoButton.setAttribute("aria-pressed", "false");
+  document.getElementById("capture")!.insertAdjacentElement("afterend", photoButton);
+  photoButton.addEventListener("click", () => {
+    basemapCheck = !basemapCheck;
+    photoButton.setAttribute("aria-pressed", String(basemapCheck));
+    applyPhoto(); view.forceUpdate(); report();
+  });
   const grade = (before: boolean) => {
     const look = LOOKS[direction];
-    view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T21:00:00+09:00");
-    photoLayer.update({ raster: { color: new Color().setHex(before ? 0xd8a878 : look.tint) } } as any);
+    view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T20:00:00+09:00");
+    applyPhoto();
     ambient.update({ ambient: { intensity: before ? 0.15 : look.ambient } } as any);
     view.toneMappingExposure = before ? 1.05 : look.exposure;
   };
