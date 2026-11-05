@@ -53,6 +53,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         official: "official.html",
+        awakening: "awakening.html",
       },
     },
   },
