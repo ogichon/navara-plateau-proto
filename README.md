@@ -116,3 +116,13 @@ camera math was proven exact via the readout. Fix: vite.config.ts now has a
 closeBundle plugin copying the package's runtime wasm assets
 (draco_decoder + navara_wasm_font_worker_bg) into dist/assets/. Verified
 live: the decoder URL now returns HTTP 200 application/wasm.
+
+## CONFIRMED WORKING (2026-11-05)
+User confirmed in their browser after the v11 fix: the PLATEAU buildings
+render. Verdict for idea ① (Navara replacing the Blender framing step):
+ADOPT for framing/sun-position exploration and AI-video reference stills —
+camera is numeric and provably exact, sun/time-of-day is a clock setting,
+night grading works (ambient + exposure + ground tint). Blender remains
+better for textured photoreal stills, but it cost ~7.5 min/frame and blind
+camera work; Navara iterates in seconds. Next in sequence: ② time/weather
+time-lapse, then ③ attribute-driven styling (FeatureEvaluator), ④ PersonView.
