@@ -28,13 +28,13 @@ const PLACES: Record<
 
 type Direction = "cyberpunk" | "gold" | "holographic";
 type Phase = "before" | "after" | "wave" | "complete";
-// Ground tints retain each hue, lifted above the v14 night luminance floor.
+// Retain ground hues; low sun supplies directional light, with sunset-level fill/exposure.
 const LOOKS = {
-  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0x51628c, ambient: 0.6, exposure: 1.7,
+  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0x51628c, ambient: 0.15, exposure: 1.05,
     stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
-  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0x927349, ambient: 0.6, exposure: 1.6,
+  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0x927349, ambient: 0.15, exposure: 1.0,
     stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
-  holographic: { label: "Holographic City", base: 0x070d10, tint: 0x586f77, ambient: 0.6, exposure: 1.6,
+  holographic: { label: "Holographic City", base: 0x070d10, tint: 0x586f77, ambient: 0.15, exposure: 1.0,
     stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
 } satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; stops: number[][] }>;
 const initialPlace = new URLSearchParams(location.search).get("place");
@@ -78,7 +78,7 @@ async function main() {
   const scene = plugin.addDefaultPhotorealScene();
   scene.sun.update({ sun: { castShadow: true } } as any);
   const ambient = view.addLight({ ambient: { intensity: 0.15, color: new Color().setHex(0x93a7cc) } } as any);
-  view.addEffect({ clouds: { coverage: 0.45, lightShafts: true, haze: true } } as any);
+  const clouds = view.addEffect({ clouds: { coverage: 0.45, lightShafts: true, haze: true } } as any);
   view.addEffect({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } } as any);
   const terrainSource = view.addSource({
     type: "quantized-mesh",
@@ -121,7 +121,7 @@ async function main() {
     }
     return { color: new Color().setHex(mix(0xffffff, look.base, Math.max(passed, front))),
       emissive: new Color().setHex(gradient(look.stops, h)),
-      emissiveIntensity: passed * (0.55 + Math.min(h / 240, 1) * 0.65) + front * 4,
+      emissiveIntensity: passed * (0.12 + Math.min(h / 240, 1) * 0.18) + front * 4,
       opacity: 1, show: true };
   };
   const refresh = () => {
@@ -177,7 +177,9 @@ async function main() {
   });
   const grade = (before: boolean) => {
     const look = LOOKS[direction];
-    view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T20:00:00+09:00");
+    view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T16:30:00+09:00");
+    // Lower haze optical depth only in After; preserve the original Before.
+    clouds.update({ clouds: { hazeDensityScale: before ? 3e-5 : 1.5e-5 } } as any);
     applyPhoto();
     ambient.update({ ambient: { intensity: before ? 0.15 : look.ambient } } as any);
     view.toneMappingExposure = before ? 1.05 : look.exposure;

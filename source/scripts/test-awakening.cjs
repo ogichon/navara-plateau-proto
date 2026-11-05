@@ -17,7 +17,9 @@ const palettes = {
 async function check(place) {
   let now = 0, timer, interval, cameraCalls = 0, captured = false;
   const layers = [];
+  const effects = [];
   let ambientIntensity;
+  let activeLook = 'cyberpunk';
   const windowListeners = {};
   const showPage = persisted => windowListeners.pageshow({ persisted });
   class Element {
@@ -35,7 +37,7 @@ async function check(place) {
   class Color { setHex(hex) { this.hex = hex; return this; } }
   class View {
     atmosphere = {}; attribution = { add() {} };
-    addPlugin() {} async init() {} addLight() { return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect() {}
+    addPlugin() {} async init() {} addLight() { return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect(value) { const effect = { config: value, update(value) { this.lastUpdate = value; } }; effects.push(effect); return effect; }
     addSource(value) { return value; }
     addLayer(value) { const layer = { ...value, update(value) { this.lastUpdate = value; }, listeners: {}, on(name, fn) { this.listeners[name] = fn; } }; layers.push(layer); return layer; }
     setCamera() { cameraCalls++; } forceUpdate() {}
@@ -52,15 +54,16 @@ async function check(place) {
   const assertGrade = before => {
     const view = context.window.__view;
     const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
-    assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T11:00:00.000Z');
+    assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T07:30:00.000Z');
+    assert.equal(effects.find(effect => effect.config.clouds).lastUpdate.clouds.hazeDensityScale, before ? 3e-5 : 1.5e-5);
     if (before) {
       assert.equal(tint, 0xd8a878, 'Before tint unchanged');
       assert.equal(ambientIntensity, 0.15, 'Before ambient unchanged');
       assert.equal(view.toneMappingExposure, 1.05, 'Before exposure unchanged');
     } else {
       assert.ok(luminance(tint) >= luminance(0x51628c), 'After ground meets v14 luminance floor');
-      assert.ok(ambientIntensity >= 0.6, 'After ambient floor');
-      assert.ok(view.toneMappingExposure >= 1.6, 'After exposure floor');
+      assert.equal(ambientIntensity, 0.15, 'After low-sun ambient grade');
+      assert.equal(view.toneMappingExposure, ({ cyberpunk: 1.05, gold: 1.0, holographic: 1.0 })[activeLook], 'exact applied low-sun exposure');
     }
   };
   const checkPhoto = () => {
@@ -68,7 +71,7 @@ async function check(place) {
     const photo = layers.find(layer => layer.type === 'raster');
     const original = JSON.stringify(photo.lastUpdate);
     const untouched = () => JSON.stringify({ date: view.atmosphere.date, exposure: view.toneMappingExposure,
-      ambientIntensity, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
+      ambientIntensity, effects, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
       style: typeof style === 'function' ? style({ properties: p }) : null });
     const before = untouched();
     ids['basemap-check'].click();
@@ -83,6 +86,8 @@ async function check(place) {
     assert.equal(ids['basemap-check'].attrs['aria-pressed'], 'false');
     assert.doesNotMatch(ids.status.textContent, /ベースマップ確認中/);
   };
+  assert.equal(JSON.stringify(effects[0].config), JSON.stringify({ clouds: { coverage: 0.45, lightShafts: true, haze: true } }), 'cloud effects preserved');
+  assert.equal(JSON.stringify(effects[1].config), JSON.stringify({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } }), 'bloom preserved');
   assertGrade(true);
   assert.match(ids.status.textContent, /Before/);
   const building = layers.find(l => l.type === '3d-tiles');
@@ -94,8 +99,12 @@ async function check(place) {
   assert.equal(style({ properties: p }).color.hex, 0xffffff);
   checkPhoto();
   for (const button of looks.slice(1)) {
+    activeLook = button.dataset.look;
     button.click();
     assertGrade(false);
+    assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex,
+      { cyberpunk: 0x51628c, gold: 0x927349, holographic: 0x586f77 }[button.dataset.look], 'exact After tint');
+    assert.equal(context.window.__view.toneMappingExposure, button.dataset.look === "cyberpunk" ? 1.05 : 1.0);
     checkPhoto();
     const palette = palettes[button.dataset.look];
     assert.equal(style({ properties: p }).color.hex, palette.base, 'building base unchanged');
@@ -103,13 +112,18 @@ async function check(place) {
       assert.equal(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissive.hex, color,
         `${button.dataset.look} emissive stop at ${height} m unchanged`);
     }
+    for (const [height, expected] of [[-20, 0.12], [0, 0.12], [120, 0.21], [240, 0.30], [500, 0.30]]) {
+      assert.ok(Math.abs(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissiveIntensity - expected) < 1e-12, `steady intensity at ${height} m`);
+    }
+    assert.equal(style({ properties: {} }).emissiveIntensity, 0.12, 'missing height uses minimum');
     looks[0].click(); assertGrade(true);
+    activeLook = button.dataset.look;
     button.click();
     assert.notEqual(style({ properties: p }).color.hex, 0xffffff);
     assert.ok(style({ properties: p }).emissiveIntensity > 0);
   }
   ids['basemap-check'].click();
-  looks[1].click(); looks[2].click(); looks[0].click();
+  looks[1].click(); looks[2].click(); activeLook = 'gold'; looks[0].click();
   assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex, 0xffffff);
   ids['basemap-check'].click(); assertGrade(true);
   assert.equal(cameraCalls, 1, 'art comparisons preserve camera');
@@ -121,7 +135,7 @@ async function check(place) {
   assertGrade(false);
   assert.match(ids.status.textContent, /覚醒中/);
   checkPhoto();
-  assert.ok(style({ properties: p }).emissiveIntensity > 3.9, 'front flashes at landmark');
+  assert.ok(Math.abs(style({ properties: p }).emissiveIntensity - 4) < 1e-10, 'front adds exactly 4 at landmark');
   assert.equal(style({ properties: { ...p, _y: origin[1]+0.05 } }).emissiveIntensity, 0, 'distant buildings wait');
   assert.equal(style({ properties: {} }).emissiveIntensity, 0);
   let late;
@@ -134,7 +148,8 @@ async function check(place) {
   assert.equal(lateEvaluations, evaluationsAtRemoval, 'removed evaluator is never refreshed');
   assert.match(ids.status.textContent, /完了/);
   assert.equal(timer, undefined);
-  assert.ok(style({ properties: p }).emissiveIntensity < 2, 'front settles');
+  assert.equal(style({ properties: p }).emissiveIntensity, 0.30, 'front settles to new steady maximum');
+  assertGrade(false);
   showPage(true);
   assert.match(ids.status.textContent, /完了/, 'pageshow preserves completion');
   for (const persisted of [true, false]) {
@@ -157,6 +172,6 @@ async function check(place) {
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
   looks[0].click(); assert.equal(timer, undefined);
   ids.capture.click(); assert.equal(captured, true);
-  console.log(`PASS ${place}: Before and After grade floors, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
+  console.log(`PASS ${place}: Before and exact low-sun After grades, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
 }
 (async () => { await check('tokyo'); await check('tocho'); })().catch(error => { console.error(error); process.exitCode = 1; });
