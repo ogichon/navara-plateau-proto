@@ -23,7 +23,7 @@
 <div id="app"></div>
 <div id="ui">
   <h1>Navara × PLATEAU — 東京駅</h1>
-  <p>PLATEAU 千代田区+中央区 LOD2（テクスチャなし・白モデル）／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。</p>
+  <p id="note">PLATEAU LOD2（テクスチャなし・白モデル）／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。</p>
   <div class="row">
     <button onclick="location.search='?place=tokyo'">東京駅</button>
     <button onclick="location.search='?place=tocho'">都庁（新宿）</button>
@@ -35,6 +35,7 @@
     <button id="capture">📸 キャプチャ</button>
   </div>
   <div id="status">初期化中…</div>
+  <div id="cam" style="font-size:11px;color:#ffd28a;margin-top:4px;word-break:break-all;"></div>
 </div>
 <script type="module" src="/src/main.ts"></script>
 </body>

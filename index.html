@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Navara × PLATEAU — 東京駅プロトタイプ</title>
 <style>html,body{background:#0a0a0f;height:100%;margin:0;font-family:system-ui,sans-serif;overflow:hidden}#app{position:fixed;inset:0}#app canvas{display:block}#ui{z-index:10;color:#fff;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);background:#0a0c14c7;border-radius:10px;max-width:340px;padding:10px 12px;position:fixed;top:12px;left:12px}#ui h1{margin:0 0 6px;font-size:14px;font-weight:600}#ui p{opacity:.85;margin:4px 0;font-size:12px;line-height:1.5}#ui .row{flex-wrap:wrap;gap:6px;margin-top:8px;display:flex}#ui button{color:#fff;cursor:pointer;background:#ffffff14;border:1px solid #ffffff40;border-radius:8px;padding:6px 10px;font-size:12px}#ui button.active{background:#3b82f6;border-color:#3b82f6}#status{color:#9fd0ff;word-break:break-all;margin-top:8px;font-size:11px}</style>
-  <script type="module" crossorigin src="./assets/index-C2G2dQD3.js"></script>
+  <script type="module" crossorigin src="./assets/index-B_xGmSPc.js"></script>
 </head>
 <body>
 <div id="app"></div>
 <div id="ui">
   <h1>Navara × PLATEAU — 東京駅</h1>
-  <p>PLATEAU 千代田区+中央区 LOD2（テクスチャなし・白モデル）／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。</p>
+  <p id="note">PLATEAU LOD2（テクスチャなし・白モデル）／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。</p>
   <div class="row">
     <button onclick="location.search='?place=tokyo'">東京駅</button>
     <button onclick="location.search='?place=tocho'">都庁（新宿）</button>
@@ -23,6 +23,7 @@
     <button id="capture">📸 キャプチャ</button>
   </div>
   <div id="status">初期化中…</div>
+  <div id="cam" style="font-size:11px;color:#ffd28a;margin-top:4px;word-break:break-all;"></div>
 </div>
 </body>
 </html>

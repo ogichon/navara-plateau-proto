@@ -1,5 +1,4 @@
 import ThreeView, { Color } from "@navaramap/three";
-import { Vector3 } from "three";
 import {
   DefaultPlugin,
   type DefaultDescriptions,
@@ -33,35 +32,33 @@ const initialPlace = params.get("place") ?? "tokyo";
 // Tokyo tilesets are verbatim from the official Navara example; the Shinjuku
 // tileset was located via the PLATEAU streaming catalog (GraphQL) and its
 // region (lng 139.673–139.744, lat 35.674–35.730) covers the Tocho.
+// v4 diagnosis note: in v1/v2 (setCamera), the framed center landed roughly
+// 800–1000 m toward the heading direction from the given lng/lat — i.e. the
+// given point behaves like the camera anchor, not the look target. Anchors
+// below are therefore placed that far *behind* each target (opposite the
+// heading). The on-screen camera readout (getCamera) verifies this.
 const PLACES: Record<
   string,
-  {
-    label: string;
-    tilesets: string[];
-    target: { lng: number; lat: number; height: number };
-    offsetENU: [number, number, number];
-  }
+  { label: string; note: string; tilesets: string[]; camera: Record<string, number> }
 > = {
   tokyo: {
     label: "東京駅",
+    note: "PLATEAU 千代田区+中央区 LOD2（テクスチャなし・白モデル）",
     tilesets: [
       "https://assets.cms.plateau.reearth.io/assets/db/070026-aa27-431b-8d53-7cc6b03244f8/13101_chiyoda-ku_pref_2023_citygml_1_op_bldg_3dtiles_13101_chiyoda-ku_lod2_no_texture/tileset.json",
       "https://assets.cms.plateau.reearth.io/assets/4c/f2436a-e2be-40e2-83da-f1781f36e30b/13102_chuo-ku_pref_2023_citygml_1_op_bldg_3dtiles_13102_chuo-ku_lod2_no_texture/tileset.json",
     ],
-    // v3: lookAt with an explicit ENU offset (v1/v2 setCamera framing missed):
-    // camera west-northwest of the station, ~310 m up, looking at the Marunouchi side.
-    target: { lng: 139.7671, lat: 35.6812, height: 30 },
-    offsetENU: [-470, 240, 310],
+    // Target: Tokyo Station (139.7671, 35.6812). Anchor ~700 m behind (SW).
+    camera: { lng: 139.7625, lat: 35.6785, distance: 950, heading: 55, pitch: -42, roll: 0 },
   },
   tocho: {
     label: "都庁（新宿）",
+    note: "PLATEAU 新宿区 LOD2（テクスチャなし・白モデル）",
     tilesets: [
       "https://assets.cms.plateau.reearth.io/assets/f0/840fc4-114c-41e4-9a65-67768efd3629/13104_shinjuku-ku_pref_2023_citygml_2_op_bldg_3dtiles_13104_shinjuku-ku_lod2_no_texture/tileset.json",
     ],
-    // Tocho twin towers (243 m) at lng 139.6917 / lat 35.6896; aim mid-tower,
-    // camera south-west (Central Park side), mirroring the Blender shot.
-    target: { lng: 139.6917, lat: 35.6896, height: 120 },
-    offsetENU: [-430, -390, 300],
+    // Target: Tocho (139.6917, 35.6896). Anchor ~800 m behind (SW).
+    camera: { lng: 139.6859, lat: 35.6841, distance: 1000, heading: 40, pitch: -40, roll: 0 },
   },
 };
 const place = PLACES[initialPlace] ?? PLACES.tokyo;
@@ -129,15 +126,34 @@ async function main() {
     },
   ] as any);
 
-  view.lookAt(place.target as any, new Vector3(...place.offsetENU));
-  (window as any).__camera = (() => {
-    try {
-      return view.getCamera();
-    } catch {
-      return null;
-    }
-  })();
+  view.setCamera(place.camera as any);
   document.title = `Navara × PLATEAU — ${place.label}`;
+  const noteEl = document.getElementById("note");
+  if (noteEl) {
+    noteEl.textContent = `${place.note}／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。`;
+  }
+  // Live camera readout: turns any screenshot into a camera diagnostic.
+  const camEl = document.getElementById("cam");
+  const showCam = () => {
+    try {
+      const c: any = view.getCamera();
+      const txt = `cam lng ${(+c.lng).toFixed(5)} / lat ${(+c.lat).toFixed(5)} / h ${Math.round(+c.height)}m / hd ${Math.round(+c.heading)}° / pitch ${Math.round(+c.pitch)}°`;
+      if (camEl) camEl.textContent = txt;
+      (window as any).__camera = c;
+    } catch {
+      /* readout is best-effort */
+    }
+  };
+  showCam();
+  setInterval(showCam, 2000);
+  try {
+    (view as any).on("idle", () => {
+      showCam();
+      setStatus(`読み込み完了（${(window as any).__timeLabel ?? ""}）`);
+    });
+  } catch {
+    /* idle event optional */
+  }
   const h1 = document.querySelector("#ui h1");
   if (h1) h1.textContent = `Navara × PLATEAU — ${place.label}`;
 
@@ -154,6 +170,7 @@ async function main() {
       .forEach((b) => b.classList.toggle("active", (b as HTMLElement).dataset.time === key));
     setStatus(`時刻: ${t.label} に設定。タイル読み込み待ち…`);
     (window as any).__timeKey = key;
+    (window as any).__timeLabel = t.label;
   };
   document.querySelectorAll("button[data-time]").forEach((b) => {
     b.addEventListener("click", () => applyTime((b as HTMLElement).dataset.time!));
