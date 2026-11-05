@@ -27,6 +27,11 @@ const TIMES: Record<
 const params = new URLSearchParams(location.search);
 const initialTime = params.get("time") ?? "day";
 const initialPlace = params.get("place") ?? "tokyo";
+// A/B diagnostic: "plain" mode replicates the official 3D Tiles buildings
+// example exactly (no photoreal scene, simple ambient+sun lights). If
+// buildings render in plain mode but not in photoreal mode, the photoreal
+// scene (deferred lighting / aerial perspective) is the culprit.
+const plainMode = params.get("mode") === "plain";
 
 // PLATEAU 3D Tiles (FY2023, LOD2 no texture) — URLs verified by opening them.
 // Tokyo tilesets are verbatim from the official Navara example; the Shinjuku
@@ -78,25 +83,33 @@ async function main() {
   view.addPlugin(defaultPlugin);
   setStatus("WASM初期化中…");
   await view.init();
-  const scene = defaultPlugin.addDefaultPhotorealScene();
-  scene.sun.update({ sun: { castShadow: true } } as any);
-  const ambient = view.addLight({
-    ambient: { intensity: 0, color: new Color().setHex(0x93a7cc) },
-  } as any);
+  let ambient: any;
+  if (plainMode) {
+    // Official buildings example: plain ambient + sun, no photoreal scene.
+    view.addLight({ ambient: { intensity: 0.5 } } as any);
+    view.addLight({ sun: { intensity: 2, applyColor: true } } as any);
+    ambient = { update: () => {} };
+  } else {
+    const scene = defaultPlugin.addDefaultPhotorealScene();
+    scene.sun.update({ sun: { castShadow: true } } as any);
+    ambient = view.addLight({
+      ambient: { intensity: 0, color: new Color().setHex(0x93a7cc) },
+    } as any);
+  }
   setStatus("シーン構築中…");
 
-  // Terrain: Re:Earth quantized-mesh (ellipsoid) — photoreal recipe options.
+  // Terrain: Re:Earth quantized-mesh (ellipsoid) — photoreal recipe options
+  // (skipped in plain mode to match the official example exactly).
   const terrainSource = view.addSource({
     type: "quantized-mesh",
     url: "https://terrain.reearth.land/cesium-mesh/ellipsoid/{z}/{x}/{y}.terrain",
     maxZoom: 18,
-    requestVertexNormals: true,
-    requestWaterMask: true,
+    ...(plainMode ? {} : { requestVertexNormals: true, requestWaterMask: true }),
   } as any);
   view.addLayer({
     type: "terrain",
     source: terrainSource,
-    terrain: { castShadow: true, receiveShadow: true },
+    ...(plainMode ? {} : { terrain: { castShadow: true, receiveShadow: true } }),
   } as any);
 
   // Basemap: GSI seamless aerial photo.
@@ -135,7 +148,7 @@ async function main() {
   document.title = `Navara × PLATEAU — ${place.label}`;
   const noteEl = document.getElementById("note");
   if (noteEl) {
-    noteEl.textContent = `${place.note}／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。`;
+    noteEl.textContent = `${place.note}／地形 Re:Earth Terrain／衛星写真 GSI seamlessphoto。太陽は atmosphere.date で制御。${plainMode ? "【plainモード：公式サンプル構成】" : "【photorealモード】"}`;
   }
   // Live camera readout: turns any screenshot into a camera diagnostic.
   const camEl = document.getElementById("cam");
