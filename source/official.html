@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Navara 公式サンプル原文 — 3D Tiles Buildings</title>
+<style>
+  html, body { margin:0; height:100%; overflow:hidden; background:#0a0a0f; font-family: system-ui, sans-serif; }
+  canvas { display:block; }
+  #ui { position:fixed; left:12px; top:12px; z-index:10; background:rgba(10,12,20,.78); color:#fff;
+        padding:10px 12px; border-radius:10px; max-width: 340px; }
+  #ui h1 { font-size:14px; margin:0 0 6px; font-weight:600; }
+  #status { font-size:11px; color:#9fd0ff; margin-top:6px; }
+  #cam { font-size:11px; color:#ffd28a; margin-top:4px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>公式サンプル原文 — 3D Tiles Buildings（東京駅）</h1>
+  <div id="status">初期化中…</div>
+  <div id="cam"></div>
+</div>
+<script type="module" src="/src/official.ts"></script>
+</body>
+</html>
