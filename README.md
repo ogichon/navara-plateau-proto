@@ -134,3 +134,11 @@ intensity and exposure across 8 grading keyframes (night → dawn → morning �
 noon → afternoon → sunset → dusk → night). Time buttons stop the sweep.
 Weather (clouds/rain) is not yet wired — the photoreal scene's cloud controls
 are the next investigation inside idea ②.
+
+## Value assessment (user, 2026-11-05)
+The page itself adds little over the official Navara demo (which already
+shows the buildings) — treat it as a verification artifact and an internal
+framing/capture tool for the video pipeline, not a product. The durable
+know-how from this thread is the Draco-wasm build pitfall documented above.
+Genuinely differentiated directions remain ③ attribute styling and
+④ PersonView.
