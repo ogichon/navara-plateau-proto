@@ -25,7 +25,7 @@ const TIMES: Record<
 };
 
 const params = new URLSearchParams(location.search);
-const initialTime = params.get("time") ?? "day";
+const initialTime = params.get("time") ?? "sunset";
 const initialPlace = params.get("place") ?? "tokyo";
 // A/B diagnostic: "plain" mode replicates the official 3D Tiles buildings
 // example exactly (no photoreal scene, simple ambient+sun lights). If
@@ -78,6 +78,13 @@ async function main() {
     atmosphere: { date: new Date(TIMES[initialTime]?.iso ?? TIMES.day.iso) },
   });
   (window as any).__view = view;
+  // Shared mutable state, declared up front: several helpers below are
+  // function declarations (hoisted) that close over these, and applyTime()
+  // runs before the sections that assign them.
+  let tlTimer: ReturnType<typeof setInterval> | null = null;
+  let cinemaTimer: ReturnType<typeof setInterval> | null = null;
+  let cloudsHandle: any = null;
+  let cloudsOn = true;
 
   const defaultPlugin = new DefaultPlugin();
   view.addPlugin(defaultPlugin);
@@ -95,6 +102,23 @@ async function main() {
     ambient = view.addLight({
       ambient: { intensity: 0, color: new Color().setHex(0x93a7cc) },
     } as any);
+    // Navara's signature look (takram): volumetric clouds with light shafts
+    // and haze, plus selective bloom so emissive features actually glow.
+    // The base photoreal scene includes neither — both are separate effects.
+    try {
+      cloudsHandle = view.addEffect({
+        clouds: { coverage: 0.45, lightShafts: true, haze: true },
+      } as any);
+    } catch (e) {
+      console.warn("clouds unavailable", e);
+    }
+    try {
+      view.addEffect({
+        selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 },
+      } as any);
+    } catch (e) {
+      console.warn("selective bloom unavailable", e);
+    }
   }
   setStatus("シーン構築中…");
 
@@ -199,6 +223,7 @@ async function main() {
     const t = TIMES[key];
     if (!t) return;
     stopTimelapse();
+    stopCinema();
     applyGrading(new Date(t.iso), t.groundTint, t.ambient, t.exposure);
     document
       .querySelectorAll("button[data-time]")
@@ -252,7 +277,6 @@ async function main() {
     const p = (n: number) => String(n).padStart(2, "0");
     return new Date(`2026-11-05T${p(hh)}:${p(mm)}:00+09:00`);
   };
-  let tlTimer: ReturnType<typeof setInterval> | null = null;
   const tlButton = document.getElementById("timelapse");
   function stopTimelapse() {
     if (tlTimer) {
@@ -391,6 +415,54 @@ async function main() {
   };
   document.querySelectorAll("button[data-style]").forEach((b) => {
     b.addEventListener("click", () => setStyleMode((b as HTMLElement).dataset.style as StyleMode));
+  });
+
+  // ---- Cinematic camera: slow orbit around the target, plus cloud toggle.
+  const orbit = {
+    lng: place.camera.lng,
+    lat: place.camera.lat,
+    distance: place.camera.distance,
+    heading: place.camera.heading,
+    pitch: place.camera.pitch,
+    roll: 0,
+  };
+  function stopCinema() {
+    if (cinemaTimer) {
+      clearInterval(cinemaTimer);
+      cinemaTimer = null;
+      const b = document.getElementById("cinema");
+      if (b) b.textContent = "🎥 シネマ";
+    }
+  }
+  document.getElementById("cinema")?.addEventListener("click", () => {
+    if (cinemaTimer) {
+      stopCinema();
+      setStatus("シネマモードを停止しました");
+      return;
+    }
+    const b = document.getElementById("cinema");
+    if (b) b.textContent = "⏸ シネマ停止";
+    setStatus("🎥 シネマモード：ゆっくり周回中（画面を触ると止まります）");
+    cinemaTimer = setInterval(() => {
+      orbit.heading = (orbit.heading + 0.12) % 360;
+      view.setCamera({ ...orbit } as any);
+    }, 50);
+  });
+  container.addEventListener("pointerdown", () => stopCinema());
+  document.getElementById("clouds")?.addEventListener("click", (e) => {
+    if (!cloudsHandle) {
+      setStatus("雲はフォトリアルモードでのみ利用できます");
+      return;
+    }
+    cloudsOn = !cloudsOn;
+    try {
+      cloudsHandle.update({ visible: cloudsOn } as any);
+    } catch {
+      /* best effort */
+    }
+    view.forceUpdate();
+    (e.currentTarget as HTMLElement).classList.toggle("active", cloudsOn);
+    setStatus(cloudsOn ? "☁️ 立体雲オン" : "雲オフ");
   });
 
   document.getElementById("capture")!.addEventListener("click", () => {
