@@ -101,3 +101,31 @@ showCam();
 setInterval(showCam, 2000);
 const statusEl = document.getElementById("status");
 if (statusEl) statusEl.textContent = "公式サンプル原文ページ：初期化完了。タイル読み込み待ち…";
+
+// Network self-check: can THIS browser actually reach the building data?
+// Results are written into the overlay so a screenshot carries them.
+const diagEl = document.getElementById("diag");
+const TILESET_BASE =
+  "https://assets.cms.plateau.reearth.io/assets/db/070026-aa27-431b-8d53-7cc6b03244f8/13101_chiyoda-ku_pref_2023_citygml_1_op_bldg_3dtiles_13101_chiyoda-ku_lod2_no_texture";
+async function probe(name: string, url: string) {
+  try {
+    const r = await fetch(url);
+    const buf = await r.arrayBuffer();
+    return `${name}: HTTP ${r.status} / ${buf.byteLength}B`;
+  } catch (e: any) {
+    return `${name}: FAILED ${e?.message ?? e}`;
+  }
+}
+(async () => {
+  const lines: string[] = [];
+  lines.push(await probe("tileset", `${TILESET_BASE}/tileset.json`));
+  if (diagEl) diagEl.textContent = lines.join(" ｜ ");
+  lines.push(await probe("root.b3dm", `${TILESET_BASE}/data/data622.b3dm`));
+  if (diagEl) diagEl.textContent = lines.join(" ｜ ");
+  lines.push(await probe("leaf.b3dm", `${TILESET_BASE}/data/data17.b3dm`));
+  if (diagEl) diagEl.textContent = lines.join(" ｜ ");
+  lines.push(
+    await probe("papers", "https://papers.reearth.land/styles/papers-light/tilejson.json"),
+  );
+  if (diagEl) diagEl.textContent = lines.join(" ｜ ");
+})();
