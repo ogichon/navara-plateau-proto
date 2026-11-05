@@ -85,3 +85,19 @@ UI: buttons switch the sun via `view.atmosphere.date` — 昼 12:00 / 夕 17:40 
   responds; judgment with tiles loaded is still pending.
 - Agent-browser tile streaming is very slow (60–120 s may not finish); the
   user's real Chrome renders far faster and is the reliable visual check.
+
+## v5–v7 camera verification (2026-11-05)
+- CameraPosition doc (dist types): lng/lat/height = TARGET, distance = camera
+  distance along the forward ray. Verified numerically via the on-screen
+  readout (view.camera.positionGeographic / .orientation — the earlier
+  getCamera() and Core getters do not exist on ThreeView):
+  - Tokyo: cam 139.76395, 35.67940, h 386 m, hd 55, pitch -48 (predicted
+    139.7639 / 35.6794 / 386 m — exact match).
+  - Tocho: cam 139.68894, 35.68691, h 403 m, hd 40, pitch -46 (predicted
+    139.6890 / 35.6869 / 403 m — exact match).
+  => Framing is provably correct in the current build.
+- v6: 3D Tiles layer color changed from raw hex to `new Color().setHex(...)`
+  (official buildings-example parity) — prime suspect for invisible
+  buildings; verification pending in the user's real Chrome (the agent
+  browser's tile streaming has degraded to the point that even raster photo
+  tiles no longer arrive within 150 s; only DOM readouts are reliable there).
