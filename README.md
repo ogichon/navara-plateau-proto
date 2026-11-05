@@ -154,3 +154,21 @@ depths are numbers under keys ending in `_浸水深`, per basin/scenario).
   data (rivers + storm surge); no-risk buildings go translucent dark,
   ≥3.5 m goes red with stronger emissive; scene grading switches to a
   dusk deep-blue mood. ⬜ 通常 restores the white model + current time.
+
+## v14 — Navara showcase (2026-11-05)
+User feedback: styling alone was "still weak — not using what Navara is
+good at". Navara's actual strengths (takram lineage) are the photoreal
+rendering stack, which the base scene only partially enables. Now on:
+- Volumetric clouds (@takram/three-clouds via the "clouds" effect):
+  coverage 0.45, light shafts, haze. Its textures live in
+  dist/assets/cloud/ and hit the SAME module-relative 404 trap as the
+  Draco wasm — vite.config.ts now also copies the cloud/noise/water
+  asset dirs (atmosphere/ is 34 MB and the sky works without it).
+- Selective bloom effect (strength 0.85, threshold 0.55) so the emissive
+  styling from v13 (rainbow/flood) genuinely glows.
+- 🎥 シネマ: slow cinematic orbit around the target (heading +0.12° per
+  50 ms via setCamera); stops on canvas pointerdown or time change.
+- Default time is now golden hour (sunset) — the money shot with clouds.
+Also fixed a latent TDZ hazard: timer/cloud state is declared at the top
+of main() because hoisted stop*() helpers close over it and applyTime()
+runs before the sections that assign it.
