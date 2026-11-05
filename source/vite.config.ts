@@ -54,6 +54,7 @@ export default defineConfig({
         main: "index.html",
         official: "official.html",
         awakening: "awakening.html",
+        underwater: "underwater.html",
       },
     },
   },

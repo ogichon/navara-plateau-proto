@@ -4,9 +4,20 @@ const { stripTypeScriptTypes } = require('node:module');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = stripTypeScriptTypes(readFileSync('src/awakening.ts', 'utf8').replace(/^import .*;\n/gm, ''));
+// Relative luminance from linearized sRGB (WCAG/Rec. 709 weights).
+const luminance = hex => [16, 8, 0].map(shift => {
+  const channel = ((hex >> shift) & 255) / 255;
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+const palettes = {
+  cyberpunk: { base: 0x111127, stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
+  gold: { base: 0x171719, stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
+  holographic: { base: 0x070d10, stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
+};
 async function check(place) {
   let now = 0, timer, interval, cameraCalls = 0, captured = false;
   const layers = [];
+  let ambientIntensity;
   const windowListeners = {};
   const showPage = persisted => windowListeners.pageshow({ persisted });
   class Element {
@@ -22,9 +33,9 @@ async function check(place) {
   class Color { setHex(hex) { this.hex = hex; return this; } }
   class View {
     atmosphere = {}; attribution = { add() {} };
-    addPlugin() {} async init() {} addLight() { return { update() {} }; } addEffect() {}
+    addPlugin() {} async init() {} addLight() { return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect() {}
     addSource(value) { return value; }
-    addLayer(value) { const layer = { ...value, update() {}, listeners: {}, on(name, fn) { this.listeners[name] = fn; } }; layers.push(layer); return layer; }
+    addLayer(value) { const layer = { ...value, update(value) { this.lastUpdate = value; }, listeners: {}, on(name, fn) { this.listeners[name] = fn; } }; layers.push(layer); return layer; }
     setCamera() { cameraCalls++; } forceUpdate() {}
   }
   const context = vm.createContext({ Color, ThreeView: View,
@@ -36,6 +47,21 @@ async function check(place) {
   vm.runInContext(source, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(context.window.__ready, true);
+  const assertGrade = before => {
+    const view = context.window.__view;
+    const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
+    assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T12:00:00.000Z');
+    if (before) {
+      assert.equal(tint, 0xd8a878, 'Before tint unchanged');
+      assert.equal(ambientIntensity, 0.15, 'Before ambient unchanged');
+      assert.equal(view.toneMappingExposure, 1.05, 'Before exposure unchanged');
+    } else {
+      assert.ok(luminance(tint) >= luminance(0x51628c), 'After ground meets v14 luminance floor');
+      assert.ok(ambientIntensity >= 0.6, 'After ambient floor');
+      assert.ok(view.toneMappingExposure >= 1.6, 'After exposure floor');
+    }
+  };
+  assertGrade(true);
   assert.match(ids.status.textContent, /Before/);
   const building = layers.find(l => l.type === '3d-tiles');
   let style;
@@ -46,14 +72,25 @@ async function check(place) {
   assert.equal(style({ properties: p }).color.hex, 0xffffff);
   for (const button of looks.slice(1)) {
     button.click();
+    assertGrade(false);
+    const palette = palettes[button.dataset.look];
+    assert.equal(style({ properties: p }).color.hex, palette.base, 'building base unchanged');
+    for (const [height, color] of palette.stops) {
+      assert.equal(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissive.hex, color,
+        `${button.dataset.look} emissive stop at ${height} m unchanged`);
+    }
+    looks[0].click(); assertGrade(true);
+    button.click();
     assert.notEqual(style({ properties: p }).color.hex, 0xffffff);
     assert.ok(style({ properties: p }).emissiveIntensity > 0);
   }
   assert.equal(cameraCalls, 1, 'art comparisons preserve camera');
   ids.awaken.click();
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
+  assertGrade(true);
   assert.equal(interval, 1000 / 12);
   now = 500 + 240 / 900 * 1000; timer();
+  assertGrade(false);
   assert.match(ids.status.textContent, /覚醒中/);
   assert.ok(style({ properties: p }).emissiveIntensity > 3.9, 'front flashes at landmark');
   assert.equal(style({ properties: { ...p, _y: origin[1]+0.05 } }).emissiveIntensity, 0, 'distant buildings wait');
@@ -78,6 +115,7 @@ async function check(place) {
     showPage(persisted);
     assert.match(ids.status.textContent, /Before/);
     assert.equal(timer, undefined, 'pageshow stops wave timer');
+    assertGrade(true);
     assert.equal(style({ properties: p }).color.hex, 0xffffff);
     assert.equal(context.window.__view.toneMappingExposure, 1.05, 'pageshow restores Before grade');
   }
@@ -90,6 +128,6 @@ async function check(place) {
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
   looks[0].click(); assert.equal(timer, undefined);
   ids.capture.click(); assert.equal(captured, true);
-  console.log(`PASS ${place}: Before, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
+  console.log(`PASS ${place}: Before and After grade floors, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
 }
 (async () => { await check('tokyo'); await check('tocho'); })().catch(error => { console.error(error); process.exitCode = 1; });

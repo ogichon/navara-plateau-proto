@@ -28,12 +28,13 @@ const PLACES: Record<
 
 type Direction = "cyberpunk" | "gold" | "holographic";
 type Phase = "before" | "after" | "wave" | "complete";
+// Ground tints retain each hue, lifted above the v14 night luminance floor.
 const LOOKS = {
   cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0x51628c, ambient: 0.6, exposure: 1.7,
     stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
-  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0x55432b, ambient: 0.35, exposure: 1.4,
+  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0x927349, ambient: 0.6, exposure: 1.6,
     stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
-  holographic: { label: "Holographic City", base: 0x070d10, tint: 0x455a60, ambient: 0.45, exposure: 1.5,
+  holographic: { label: "Holographic City", base: 0x070d10, tint: 0x586f77, ambient: 0.6, exposure: 1.6,
     stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
 } satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; stops: number[][] }>;
 const initialPlace = new URLSearchParams(location.search).get("place");
