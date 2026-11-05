@@ -11,10 +11,12 @@ const setStatus = (s: string) => {
 };
 
 // JST times on 2026-11-05. atmosphere.date is an absolute Date (UTC internally).
-const TIMES: Record<string, { label: string; iso: string }> = {
-  day: { label: "昼 12:00 JST", iso: "2026-11-05T12:00:00+09:00" },
-  sunset: { label: "夕 17:40 JST", iso: "2026-11-05T17:40:00+09:00" },
-  night: { label: "夜 21:00 JST", iso: "2026-11-05T21:00:00+09:00" },
+// groundTint multiplies the aerial-photo basemap: the photo itself is baked
+// daylight and unlit, so day/sunset/night grading is done here explicitly.
+const TIMES: Record<string, { label: string; iso: string; groundTint: number }> = {
+  day: { label: "昼 12:00 JST", iso: "2026-11-05T12:00:00+09:00", groundTint: 0xffffff },
+  sunset: { label: "夕 17:40 JST", iso: "2026-11-05T17:40:00+09:00", groundTint: 0xd8a878 },
+  night: { label: "夜 21:00 JST", iso: "2026-11-05T21:00:00+09:00", groundTint: 0x2c3a58 },
 };
 
 const params = new URLSearchParams(location.search);
@@ -36,7 +38,8 @@ const PLACES: Record<
       "https://assets.cms.plateau.reearth.io/assets/4c/f2436a-e2be-40e2-83da-f1781f36e30b/13102_chuo-ku_pref_2023_citygml_1_op_bldg_3dtiles_13102_chuo-ku_lod2_no_texture/tileset.json",
     ],
     // Official example: lng 139.7671 / lat 35.6812 / distance 1000 / heading 50 / pitch -35.
-    camera: { lng: 139.7671, lat: 35.6812, distance: 1100, heading: 55, pitch: -32, roll: 0 },
+    // v2: much closer + steeper pitch so the 3D buildings read as 3D, not as flat photo.
+    camera: { lng: 139.7671, lat: 35.6812, distance: 520, heading: 55, pitch: -48, roll: 0 },
   },
   tocho: {
     label: "都庁（新宿）",
@@ -45,7 +48,7 @@ const PLACES: Record<
     ],
     // Tocho at lng 139.6917 / lat 35.6896, viewed from the south-west
     // (Central Park side), mirroring the Blender shot.
-    camera: { lng: 139.6917, lat: 35.6896, distance: 1200, heading: 40, pitch: -28, roll: 0 },
+    camera: { lng: 139.6917, lat: 35.6896, distance: 560, heading: 40, pitch: -46, roll: 0 },
   },
 };
 const place = PLACES[initialPlace] ?? PLACES.tokyo;
@@ -63,16 +66,23 @@ async function main() {
   view.addPlugin(defaultPlugin);
   setStatus("WASM初期化中…");
   await view.init();
-  defaultPlugin.addDefaultPhotorealScene();
+  const scene = defaultPlugin.addDefaultPhotorealScene();
+  scene.sun.update({ sun: { castShadow: true } } as any);
   setStatus("シーン構築中…");
 
-  // Terrain: Re:Earth quantized-mesh (ellipsoid) — same dataset as the official Navara example.
+  // Terrain: Re:Earth quantized-mesh (ellipsoid) — photoreal recipe options.
   const terrainSource = view.addSource({
     type: "quantized-mesh",
     url: "https://terrain.reearth.land/cesium-mesh/ellipsoid/{z}/{x}/{y}.terrain",
     maxZoom: 18,
+    requestVertexNormals: true,
+    requestWaterMask: true,
   } as any);
-  view.addLayer({ type: "terrain", source: terrainSource } as any);
+  view.addLayer({
+    type: "terrain",
+    source: terrainSource,
+    terrain: { castShadow: true, receiveShadow: true },
+  } as any);
 
   // Basemap: GSI seamless aerial photo.
   const photoSource = view.addSource({
@@ -80,7 +90,7 @@ async function main() {
     url: "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
     maxZoom: 18,
   } as any);
-  view.addLayer({ type: "raster", source: photoSource } as any);
+  const photoLayer = view.addLayer({ type: "raster", source: photoSource } as any);
 
   for (const url of place.tilesets) {
     const src = view.addSource({ type: "3d-tiles", url } as any);
@@ -112,6 +122,7 @@ async function main() {
     const t = TIMES[key];
     if (!t) return;
     view.atmosphere.date = new Date(t.iso);
+    photoLayer.update({ raster: { color: t.groundTint } } as any);
     view.forceUpdate();
     document
       .querySelectorAll("button[data-time]")
