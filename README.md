@@ -69,3 +69,19 @@ UI: buttons switch the sun via `view.atmosphere.date` — 昼 12:00 / 夕 17:40 
    `~/workspace/plateau-tokyo-station/output/tokyo_station_still.png`
    (Blender: ~7.5 min end-to-end, 46k objects, Cycles CPU).
 2. Then: timelapse (sun/weather), attribute styling, PersonView walk.
+
+## v3/v4 (2026-11-05 afternoon)
+- v3 tried lookAt(ENU offset) for framing + night ambient/exposure: REGRESSION.
+  Agent-browser verification (120 s waits) showed a uniform blank canvas at
+  Tocho and ground-texture streaks at Tokyo — camera ended up wrong. Reverted.
+- v2 user screenshots: Tokyo framing was good; Tocho framed Yoyogi Park
+  (~1.5 km SSW of the Tocho) twice. Working hypothesis: setCamera's lng/lat
+  acts as the camera anchor and the frame center lands ~800–1000 m along the
+  heading. v4 therefore places anchors behind the targets and shows a live
+  getCamera() readout on screen (turns screenshots into diagnostics), plus an
+  idle-event "読み込み完了" status and a place-aware data note.
+- Night grading kept from v3 (ambient light + exposure + ground tint): in the
+  agent browser the whole frame did shift color at night, so the mechanism
+  responds; judgment with tiles loaded is still pending.
+- Agent-browser tile streaming is very slow (60–120 s may not finish); the
+  user's real Chrome renders far faster and is the reliable visual check.
