@@ -142,3 +142,15 @@ framing/capture tool for the video pipeline, not a product. The durable
 know-how from this thread is the Draco-wasm build pitfall documented above.
 Genuinely differentiated directions remain ③ attribute styling and
 ④ PersonView.
+
+## v13 — idea ③ impact styling (2026-11-05)
+Per-feature coloring via layer.on("featureUpdated") + FeatureEvaluator,
+driven by the real PLATEAU batch attributes (verified by parsing a B3DM
+batch table directly: `bldg:measuredHeight` is a binary DOUBLE; flood
+depths are numbers under keys ending in `_浸水深`, per basin/scenario).
+- 🌈 カラフル: color + slight emissive by measured height
+  (purple low-rise → red supertall gradient).
+- 🌊 浸水: color by the maximum flood depth across all scenarios in the
+  data (rivers + storm surge); no-risk buildings go translucent dark,
+  ≥3.5 m goes red with stronger emissive; scene grading switches to a
+  dusk deep-blue mood. ⬜ 通常 restores the white model + current time.
