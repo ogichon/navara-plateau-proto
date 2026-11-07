@@ -91,3 +91,88 @@ WASMのsetter自体はnull/undefinedも受理するが、TS公開型はNormalize
 `three-default-descs/src/effects/clouds/pass.ts:73,130,522–526` でnumberを公開し既定3e-5、setterはそのままrawEffectへ代入。`effects/CloudsEffectDesc.ts:108–109` は !== undefined で更新するので0も通る。`@takram/three-clouds/src/shaders/clouds.frag:665–668` はdensityに乗算し、density < 1e-7でゼロを返すため0は許容される。距離寄与は同:682–697の光学的厚さ・alpha計算。方式Aでは指示通りAfter 1.5e-5 / Before 3e-5を維持し、Cは未採用。
 
 粒子については同パッケージのSTBN jitterと履歴合成の既調査が引き続き該当する。公開CloudsOptionsにSTBN jitter自体を切る項目はなく、観測ノイズの主因も未確定。雲削除・lightShafts削除や負荷増の品質変更は行わない。地形unlitが粒子を除去するとも主張しない。
+
+
+## BRIEF-POLISH-INV — AWAKENING 磨き込み前調査（2026-11-07）
+
+ブリーフ `docs/briefs/polish1-investigation.md` を全文読んで調査した。対象はこのworktreeから参照するインストール済み実コード。以下のパスは **node_modules/ 相対**、行番号は調査時点。Navara three / three-default-plugin / three-default-descs / three-csm は0.2.1、Takram three-cloudsは0.7.6、three-atmosphereは0.19.1、Three.jsは0.187.0。node_modulesは元repoへのシンボリックリンクであり、パッケージも変更していない。同一バージョン表記でもコード差があり得るため、過去記録より以下の実コードを優先する。
+
+背景の「暗さは解決、ユーザー目視 #9」はブリーフからの引継ぎ情報。本調査は静的コード確認であり、粒子の実原因や作品の品質を目視判定していない。src変更・デプロイなし。GitHub Issues / PR / Pages の取得はCLIのネットワーク制限で失敗し、外部状態は未確認。
+
+### Q1 雲の影 — ON/OFF公開あり、影だけの濃度倍率はなし
+
+| 公開項目 | 既定値・根拠 |
+| --- | --- |
+| clouds.shadows | true。`@navaramap/three-default-descs/src/effects/clouds/pass.ts:64–69,124–127`。全体スイッチ |
+| shadowCascadeCount / shadowMapSize / shadowFarScale | 3 / Vector2(512,512) / 0.05。同上。太陽CSMとは別の雲影マップ |
+| cloudLayers[].shadow / densityScale | レイヤー別の影参加と密度。公開型 `three-default-descs/src/effects/clouds/layer.ts:14–30`。素のCloudLayer既定はfalse / 0.2（`@takram/three-clouds/src/CloudLayer.ts:48–55`）。既定レイヤー配列はr・gがshadow=true、densityScale=0.2、bはshadow=false、densityScale=0.003（`CloudLayers.ts:31–67`） |
+| coverage / scatteringCoefficient / absorptionCoefficient | 0.25 / 1 / 0（`three-default-descs/src/effects/clouds/pass.ts:116,144–145`）。雲本体にも作用するため影だけの濃度調整ではない |
+
+CloudsOptions全体（同pass.ts:45–100）にはshadowIntensity / shadowOpacity相当の独立倍率はない。密度・coverageを変えると雲の形や透過も変わる。初期化はmedium presetの後で明示shadowMapSizeを適用する（同:186–188,232–234）。Takram medium単体の256²（`three-clouds/src/qualityPresets.ts:102–107`）とNavaraラッパーの実効初期値512²を混同しない。後からqualityPresetだけを更新すると下流preset値が再適用され得る（`three-clouds/src/CloudsEffect.ts:509–515`）。
+
+経路はCloudsEffectのatmosphereShadow → Navara Atmosphere.shadow（pass.ts:248–255）→ aerialPerspectiveのrawEffect.shadow（`effects/aerialPerspective/effect.ts:125–141`）→ 深度から再構成したworldPositionで雲影のopticalDepthをサンプリングしexp(-opticalDepth) → getSunSkyIrradianceの表面照明（`@takram/three-atmosphere/src/shaders/aerialPerspectiveEffect.frag:319–379`）。建物・地形というレイヤー種別を選ぶ投影ではない。**表面減光にはirradiance=trueが必要**（Navara effect.ts:179–195、既定falseは:38–48）。標準シーンはオプション未指定ならforward照明を維持する（`three-default-plugin/src/index.ts:198–215`）。現行AWAKENINGもirradianceを有効化していないので、雲影による直接の面のムラを現時点で主因とはしない。
+
+shadows setterはAtmosphere.enableShadowsを更新（pass.ts:474–479）、一方shadowLengthの転送は独立（:257–259、aerialPerspective/effect.ts:132–140）。shadowLengthは大気散乱へ渡る（Takram frag:381–382）。したがってshadows=falseは雲・光芒・hazeの全停止ではなく、最終画像への雲の影響をすべて消す診断でもない。
+
+### Q2 太陽の影 — 解像度・bias・範囲すべて公開あり
+
+標準シーン返却のscene.sunに `update({ sun: { ... } })` で設定できる。公開型は `@navaramap/three-default-descs/src/lights/SunLightDesc.ts:13–23`、更新適用は:84–123。標準生成はsun:{}（`three-default-plugin/src/index.ts:202–204`）。以下は `lights/sunLight.ts:110–127` の実際の既定値であり、three-csm単体のfar既定5000を使わない。
+
+| 項目 | 既定値 |
+| --- | --- |
+| castShadow / shadowIntensity | true / 1 |
+| shadowMapSize / shadowCascadeCount | 2048（各cascade、正方形）/ 4 |
+| shadowFar / shadowMode / shadowLambda | 50000 m / practical / 0.8 |
+| shadowMargin / shadowFade | 5000 m / true |
+| shadowBias / shadowNormalBias / shadowRadius | 0.0001 / 0 / 1 |
+| debugCSMHelper | false |
+
+SunLightがCSMへ全設定を渡す（sunLight.ts:207–232）。CSMはカメラfarとの小さい側まで分割し、各cascadeの投影幅・奥行を設定、texel幅で位置をスナップする（`@navaramap/three-csm/src/CascadedShadowMaps.ts:214–222,238–272,304–329`）。bias / normalBias / radiusは全cascadeのThree.LightShadowへ反映（同:471–508）。作用範囲はその太陽が照らすlit受光面全体。建物だけへの限定スイッチではない。地形unlitでは通常の拡散照明の効果は変わり、影用バッファ保持とも区別する。
+
+**+1.5°でのムラは機序として裏付け可能、観測原因の確定は不可。** 通常のbiasは比較深度への加減算（`three/src/renderers/shaders/ShaderChunk/shadowmap_pars_fragment.glsl.js:150–184`）、normalBiasは受光点を法線方向へ移す（`shadowmap_vertex.glsl.js:35`、Navara view-space補正も同じ意味で適用：`three-csm/src/viewSpaceShadowReceive.ts:106–122`）。斜入射の面ではshadow texel内の深度変化とサンプル誤差が自己遮蔽判定を作り得る。+1.5°は水平面に対して浅い角度であり、全ての壁面が同じ入射角という意味ではない。biasを大きくすれば必ず改善するとは言えず、誤遮蔽を外す代わりに本来の接触影まで失う／影が離れる可能性がある。biasの符号と量は同一画角で比較する。
+
+**STBN以外の粒子候補もある。** Navara rendererはPCFShadowMapを選択（`@navaramap/three/src/index.ts:1011`）。上記Three.js PCFは画素座標のinterleavedGradientNoiseでVogel diskの5サンプルを回転させる（shadowmap_pars_fragment.glsl.js:171–185）。これはframeを引数に取らない空間ノイズで、雲の履歴蓄積の対象でもない。shadowRadiusを広げると軟化するが粒状模様が見える可能性があり、SunLightOptionsの「3x3 kernel」というコメント（sunLight.ts:98–100）より実シェーダーを優先する。既存ECEF精度対策もviewSpaceShadowReceive.ts:4–20に実装済みなので、過去の絶対座標ジッタだけを原因と断定しない。
+
+### Q3 STBN収束 — 時間再利用はあるが、既定は単純な平均蓄積ではない
+
+STBNは画素とframe % texture depthで変化する（`@takram/three-clouds/src/shaders/clouds.glsl:1–5`）。レイマーチ／shadowLengthのjitterに使う（`shaders/clouds.frag:489–490,861–892,951–961`）。実際のeffect updateごとにframeを増加し、ShadowPassとCloudsPassを実行する（`CloudsEffect.ts:478–484`）。CloudsPassは再投影行列を保持して履歴バッファをswapする（`CloudsPass.ts:185–200`）。
+
+- **既定のtemporalUpscale=true** は `CloudsMaterial.ts:137–138` と `CloudsResolveMaterial.ts:103–104`。低解像度は幅・高さをそれぞれ1/4にしたもの（CloudsPass.ts:203–223）。4×4 Bayer配置を16frameで更新する（`shaders/cloudsResolve.frag:161–165`）。更新対象画素は**蓄積せず現在値で置換**（:75–81）。他の画素は再投影した履歴をvariance clippingして利用（:84–116）。16frame経過は全配置の巡回であり、「16枚を平均してノイズゼロ」の意味ではない。resolutionScale=1でもこの内部1/4処理は残る。
+- 非upscale分岐に限って `mix(clippedHistory,current,temporalAlpha)`、alpha既定0.1（同frag:120–150、CloudsResolveMaterial.ts:77–78）。これは指数移動平均であり、サンプル数を無限に増やす平均ではない。安定した履歴なら揺らぎを減らすが、新規ノイズ・クリッピングで残差は残り得る。**過去の「alpha=0.1で収束」という記録だけでは既定経路の説明として不十分**。
+- 雲影マップは別の時間フィルタ。temporalPass=true / temporalJitter=true（`ShadowMaterial.ts:128–132`）、alpha=0.01（`ShadowResolveMaterial.ts:59–60`）。再投影・画面外拒否・variance clipping後にEMA（`shaders/shadowResolve.frag:51–65`）。雲カラーのBayer更新と混同しない。
+
+粒子が静止画に残る条件は、(1) 描画frame不足・単発キャプチャ、(2) カメラ移動などで再投影先が画面外となり履歴を拒否、(3) 雲・太陽・照明・深度の変化や境界で履歴がclipされる、(4) リサイズで履歴ターゲットが再確保／変更、(5) 既定upscaleの現在値置換と有限解像度・レイマーチ、(6) そもそも太陽PCF等の別経路。コード根拠は上記frag:75–100,129–140、CloudsPass.ts:135–156,203–223。localWeatherVelocityのNavara既定はVector2(0,0)（pass.ts:115）だが、アプリが動かせば静止カメラでも被写体は静止しない（CloudsEffect.ts:349–352）。
+
+待つだけではなく**実際に複数frameを描く必要がある**。view.animationの既定false（`@navaramap/three/src/index.ts:543`）、公開setterは連続描画の切替（:3149–3159）。アプリ側の更新でも描画されるため、現行ページが静止後に止まるかは実測が必要。
+
+Navara公開CloudsOptions（pass.ts:45–100）と更新処理（CloudsEffectDesc.ts:61以降）にtemporalUpscale / temporalAlpha / varianceGamma / temporalJitter / temporalPassの操作項目はない。下流TakramにはtemporalUpscale等のAPIがある（CloudsEffect.ts:602–607等）が、Navaraの公開設定として渡せるとは扱わない。stbnUrlはテクスチャのURLでありジッタ停止や平均回数の設定ではない。公開の間接調整はqualityPreset=medium、resolutionScale=1、maxIterationCount / minStepSize / maxStepSize=null（presetに委任）。mediumの一次レイマーチ実効値は500 / 50 / 1000（qualityPresets.ts:19–22,90–100）。品質増加は空間誤差の軽減候補に留まり、完全収束の保証なし。
+
+### Q4 立体感の公開手段 — 法線依存の照明と一様な持上げを分ける
+
+| 手段・可否 | 既定値と実コード根拠 | 面差・作用範囲・制約 |
+| --- | --- | --- |
+| ambient色/強さ：可 | 白 / 1。`three-default-descs/src/lights/ambientLight.ts:8–15` | 一様な拡散底上げ。面方向の差を新たに作らず、強すぎると差を埋める。forwardのlit面全体。AWAKENINGの補助光0.3はアプリ値でSDK既定ではない |
+| 露出：可 | 1。`three/src/renderers/WebGLRenderer.js:286`、Navara委譲`three/src/index.ts:1276–1283` | 最終画面全体。法線差を作らず、トーン圧縮で差を弱める場合あり |
+| 建物色・発光の勾配：可 | バッチ公開属性はcolor/show/opacity/emissive/emissiveIntensity（`three/src/mesh/model.ts:47–51`）。Three標準材質のemissiveIntensity既定1（下記補足） | FeatureEvaluatorで選択した建物のみ。高さは建物ごとの属性であり、同じ建物の壁面法線ごとの勾配ではない。発光低下は既存照明差を見せる手段 |
+| 太陽の方向・強さ・影：可 | SunLight intensity=1、applyColor=false、色=白、影設定はQ2（sunLight.ts:110–127）。方向はAtmosphereの日付に追従（SunLightDesc.ts:149–159） | 法線と入射方向の内積による面差と遮蔽。forwardのlit面全体。標準材質の拡散照明の例は`three/src/renderers/shaders/ShaderChunk/lights_lambert_pars_fragment.glsl.js:13–14` |
+| 既存SkyLightProbe強さ：可 | intensity=1。Navara `lights/skyLightProbe.ts:12–25` → Takram SkyLightProbe.ts:67–71 → `three/src/lights/LightProbe.js:31` | 大気irradiance textureから球面調和係数を生成（Takram SkyLightProbe.ts:115–128）。上向き・横向きの法線差を作るが、同じ傾きの東西南北の垂直壁をこれだけで強く分離する設計ではない。forwardのlit面全体。標準シーンに既設（plugin/src/index.ts:199–201） |
+| 任意LightProbe：可 | intensity=1、係数未指定ならゼロSH。`lights/LightProbeDesc.ts:10–15,34–48`、Three LightProbe.js:31 | 任意のSH係数で方向性ある拡散フィルを作れる。面法線による壁面差が可能。forwardのlit面全体、建物限定の公開マスクはない |
+| 大気irradiance：可 | false、albedoScale=2/π、useNormalBuffer=true（`effects/aerialPerspective/effect.ts:21–48,179–195`） | worldNormalから太陽＋天空照明を計算（Takram frag:333–379）。後段の不透明ジオメトリ全体で、terrain.lit=falseだけでは地面を除外できない。forwardと二重照明しないようview.lit=falseとの対が必要（plugin/src/index.ts:158–165,207–215）。透過未対応。既存の地面改善・発光との整合は別途検証必須 |
+| 後段の太陽影・specular：可 | shadow=false / shadowIntensity=1 / shadowSoftness=1.5px / shadowSamples=12 / specular=false / specularIntensity=1（`effects/aerialPerspective/lightingTerms.ts:10–33`） | irradiance・法線バッファが条件（:62–75）。影で遮蔽差、specularで方向依存ハイライト。全体の照明方式変更に付随するため初手にはしない |
+| 雲の光：限定的に可 | skyLightScale=1 / groundBounceScale=1 / powderScale=0.8（clouds/pass.ts:89–97,149–152） | 雲自体の散乱・天空光・地面反射の調整。建物を照らす追加ライトではない。雲影による面の減光はQ1のirradiance経路に限る |
+| SSAO：可 | effect追加時enabled=true、intensity=1、color=黒、quality=Low、halfRes=false、samples/radius=null（`effects/ssao.ts:13–30`） | 深度周辺の遮蔽で接地・窪み・隣棟間を強める。平らな孤立壁の向き差は作らない。画面全体、建物限定マスクなし。nullはn8ao既定委任（:60–70,109–129）。標準シーンへ自動追加はされない |
+| 任意の追加ライト：拡張APIで可 | `three/src/index.ts:2274–2308,2600–2606` のaddLight/registerLight。標準登録はsun/ambient/skyLightProbe/lightProbeのみ（plugin/src/index.ts:131–135） | Point/Spot/任意方向Directionalの標準設定キーはない。独自LightDesc登録で追加可能だが、方向・強さの共通既定値はなく実装で定義する。既存sunの追加は大気方向へ追従するので独立したキーライトの代用にはならない。対象制御も独自実装が必要 |
+
+補足：発光強度のThree材質既定は `three/src/materials/MeshStandardMaterial.js:170` のemissiveIntensity代入を参照。PLATEAUの読込値やアプリのFeatureEvaluatorが上書きするため、建物の実効既定強度を一律1とは扱わない。roughness/metalnessはモデル材質に存在しても、上記バッチ属性の一覧にはなく、現在の建物FeatureEvaluatorで面ごとに自由に指定できるとは主張しない。
+
+### 磨き込み実装への技術的推奨順（今回は実装しない）
+
+1. **原因の分離を先行**。同一カメラ・同一時刻・同一伝播状態で、太陽castShadowまたはshadowIntensityの単独比較、雲shadowsの単独比較、描画frameを進めた比較を用意する。irradiance=falseなので雲の直接表面影は優先度が低い。変更後の対照も同じ条件で作り、従来Beforeの時刻・白モデルとの比較だけで原因を判定しない。
+2. **太陽CSMを局所調整**。PCF/アクネが疑われたらshadowRadiusの拡大を避けて比較し、normalBiasとbiasを少量ずつ調整。対象建物が入るshadowFar・分割を優先し、足りなければ解像度を上げる。接触影の浮き・欠落・遠景の打切り・GPU負荷を確認。数値の最適値は画像未確認のため指定しない。
+3. **既存forward照明内で面差を回復**。建物の定常発光を抑え、ambientと既存SkyLightProbeの比率を調整し、露出で一様に戻しすぎない。壁方向の差が不足なら任意LightProbeの方向性ある係数を比較する。地形unlitとtransmittance=false/haze=0の改善を保つ。
+4. **SSAOを弱く追加して接地を補う**。平面の陰影とは目的を分け、新たな粒子・ハロー・負荷が増えないか確認する。STBN寄与が確認できた場合のみ雲の公開品質・step・解像度を調整し、待機だけで消えると約束しない。
+5. **照明方式の変更は別案として後段**。irradiance＋必要なshadow/specular、または独自追加ライト。面差を増やせるが、地面の再照明・発光・透過・既存ライトとの関係を広く検証する必要がある。
+
+確認済みは公開型・更新コード・シェーダー経路・既定値のみ。ビルド / ページ起動 / 3D Tiles取得 / レンダリング完了 / 実画像確認 / 本調査に対するユーザー目視確認は今回すべて未実施。ドキュメントのみの追記なのでビルドや描画テストは行わず、差分・根拠パス・空白を検査する。判定は**暫定・目視未検証**。
+
+コミット試行結果：`git add docs/architecture.md && git commit -m ...` はgit add段階で失敗。共有管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-polish/index.lock` を作成できず、エラーは `Read-only file system`。コミット未作成、追記は作業ツリーに保持。制限回避は行わない。
