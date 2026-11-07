@@ -31,13 +31,13 @@ type Phase = "before" | "after" | "wave" | "complete";
 // After terrain bypasses lighting; bright tints retain each ground hue.
 // Ambient fill and exposure support building faces independently of ground lighting.
 const LOOKS = {
-  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0xa5b6da, ambient: 0.3, exposure: 1.1,
+  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0xa5b6da, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
     stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
-  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0xe4c99f, ambient: 0.3, exposure: 1.1,
+  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0xe4c99f, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
     stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
-  holographic: { label: "Holographic City", base: 0x070d10, tint: 0xb1ced2, ambient: 0.3, exposure: 1.1,
+  holographic: { label: "Holographic City", base: 0x070d10, tint: 0xb1ced2, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.5,
     stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
-} satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; stops: number[][] }>;
+} satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; steadyMultiplier: number; stops: number[][] }>;
 const initialPlace = new URLSearchParams(location.search).get("place");
 const placeKey = initialPlace === "tocho" ? "tocho" : "tokyo";
 const place = PLACES[placeKey];
@@ -77,7 +77,7 @@ async function main() {
   setStatus("WASM初期化中…");
   await view.init();
   const scene = plugin.addDefaultPhotorealScene();
-  scene.sun.update({ sun: { castShadow: true } } as any);
+  scene.sun.update({ sun: { castShadow: true, shadowMapSize: 4096, shadowNormalBias: 0.5 } } as any);
   const ambient = view.addLight({ ambient: { intensity: 0.15, color: new Color().setHex(0x93a7cc) } } as any);
   const clouds = view.addEffect({ clouds: { coverage: 0.45, lightShafts: true, haze: true } } as any);
   view.addEffect({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } } as any);
@@ -122,7 +122,7 @@ async function main() {
     }
     return { color: new Color().setHex(mix(0xffffff, look.base, Math.max(passed, front))),
       emissive: new Color().setHex(gradient(look.stops, h)),
-      emissiveIntensity: passed * (0.12 + Math.min(h / 240, 1) * 0.18) + front * 4,
+      emissiveIntensity: passed * (0.12 + Math.min(h / 240, 1) * 0.18) * look.steadyMultiplier + front * 4,
       opacity: 1, show: true };
   };
   const refresh = () => {

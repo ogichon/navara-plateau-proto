@@ -166,3 +166,18 @@ npx vite build成功。全5ページ、Draco/font WASM、cloud/noise/waterディ
 次の比較：実Chromeでローカル /awakening.html?place=tokyo と ?place=tocho を開き、同一カメラのBefore / 全3案、wave / complete、引いた画角、写真確認OFF→ON→OFFを比較する。期待する変化はAfterの大気透過による消光と雲hazeの除外。遠景・写真の可読性、空の色味、建物形状、粒子と作品としての品質は未判定。公開URLは本タスクのデプロイ禁止により更新しない。
 
 コミットはgit addから試みたが、共有git管理領域 /home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-dist/index.lock が読み取り専用のため失敗。コミット未作成、変更は作業ツリーに保持。git diff --check成功。
+
+
+## 勝ち案決定と磨き込み第1弾（BRIEF-HOLO、2026-11-07 / exp/holo-polish）
+
+ユーザーが Holographic City を勝ち案に選択。建物面の粒子状ムラと平坦さへの対策候補として、AWAKENING の太陽設定を `shadowMapSize: 4096`（SDK既存の数値型）/ `shadowNormalBias: 0.5` に変更した。shadowBias・shadowRadius・cascade 数は更新せず既定を維持。**影品質はシーン共通で Before にも適用**されるため、Before の描画に影響する可能性がある。Before のグレード値（時刻・ティント・環境光と色・露出・lit・大気・haze）自体は一切変更していない。
+
+案別 `steadyMultiplier` を導入し、Holographic の定常発光だけ1.5倍（0.18〜0.45相当）にした。Cyberpunk / Gold は1.0で従来の0.12〜0.30と一致。倍率は通過済みの定常成分だけに掛け、波ピーク加算+4は全案で維持する。全案のbase・全stop色・地面ティント、環境光0.3、露出1.1、lit切替、transmittance、hazeは維持。v14、UNDERWATER、CAMERA、Vite設定・依存に変更なし。
+
+検証：実在する全3テストスイート（AWAKENING 2地点 / UNDERWATER 9ケース / CAMERA 3ケース）成功。package.json の npm test は既存の未設定ダミーのため、各 scripts/test-*.cjs を直接実行した。影設定は余分な更新も拒否する完全一致で固定。全案の負の高さ/0/120/240/500m/高さ欠損の定常発光、全案の波ピーク+4・部分通過時の定常成分だけの倍率・完了時の発光を検証した。既存のBefore固定・パレット・大気・地形・写真確認・復帰テストも維持。一時ハーネスにメモリ上のソース変異を注入し、影サイズ/normal bias/bias/radius/cascade追加、全案倍率、定常発光最小/傾き、波ピーク/波への倍率誤適用、Before/After時刻、Beforeグレード、haze、lit/影、大気、写真確認、各案base/ティント/環境光/露出の37/37をAssertionErrorで検出した。作業ソースへの変異書込みなし。
+
+`npx vite build` 成功。全5ページとDraco/font WASM・cloud/noise/waterのコピーを確認。既存のVite設定ロード・チャンクサイズ・Node実験API警告あり。`git diff --check`成功。デプロイ・pushなし。GitHub状態の取得はネットワーク制限により失敗。
+
+確認段階：ビルド成功、モック適用値・挙動検証済み。ページ起動 / 3D Tiles取得成功 / レンダリング完了 / 実画像確認 / 修正後ユーザー目視確認はいずれも未実施。独立レビューは別セッションで未実施。**暫定・目視未検証。粒子が消えた／立体感が出たとは断言しない。** 次は実Chromeでローカル `/awakening.html?place=tokyo` と `?place=tocho` を同一カメラでBefore / 全3案・波・完了を比較する。期待する差は影サンプリング品質設定とHolographic定常発光の変更。面のムラ・建物形状・陰影・発光のバランスと作品品質はユーザー目視で判定する。デプロイ禁止のため公開URL更新なし。
+
+コミットは `git add` から試みたが、共有git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-holo/index.lock` が読み取り専用のため失敗。コミット未作成。変更は作業ツリーに保持。

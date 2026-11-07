@@ -105,7 +105,7 @@ async function check(place) {
   assert.equal(JSON.stringify(effects[0].config), JSON.stringify({ clouds: { coverage: 0.45, lightShafts: true, haze: true } }), 'cloud effects preserved');
   assert.equal(JSON.stringify(effects[1].config), JSON.stringify({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } }), 'bloom preserved');
   assert.equal(sceneOptions, undefined, 'default atmosphere/deferred lighting unchanged');
-  assert.equal(JSON.stringify(sunConfig), JSON.stringify({ sun: { castShadow: true } }));
+  assert.equal(JSON.stringify(sunConfig), JSON.stringify({ sun: { castShadow: true, shadowMapSize: 4096, shadowNormalBias: 0.5 } }));
   assert.equal(JSON.stringify(ambientConfig), JSON.stringify({ ambient: { intensity: 0.15, color: { hex: 0x93a7cc } } }));
   assert.equal(JSON.stringify(layers.find(layer => layer.type === 'terrain').terrain),
     JSON.stringify({ castShadow: true, receiveShadow: true }), 'initial terrain unchanged');
@@ -134,16 +134,35 @@ async function check(place) {
       assert.equal(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissive.hex, color,
         `${button.dataset.look} emissive stop at ${height} m unchanged`);
     }
+    const multiplier = button.dataset.look === 'holographic' ? 1.5 : 1.0;
     for (const [height, expected] of [[-20, 0.12], [0, 0.12], [120, 0.21], [240, 0.30], [500, 0.30]]) {
-      assert.ok(Math.abs(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissiveIntensity - expected) < 1e-12, `steady intensity at ${height} m`);
+      assert.ok(Math.abs(style({ properties: { ...p, 'bldg:measuredHeight': height } }).emissiveIntensity - expected * multiplier) < 1e-12, `steady intensity at ${height} m`);
     }
-    assert.equal(style({ properties: {} }).emissiveIntensity, 0.12, 'missing height uses minimum');
+    assert.equal(style({ properties: {} }).emissiveIntensity, 0.12 * multiplier, 'missing height uses scaled minimum');
     looks[0].click(); assertGrade(true);
     activeLook = button.dataset.look;
     button.click();
     assert.notEqual(style({ properties: p }).color.hex, 0xffffff);
     assert.ok(style({ properties: p }).emissiveIntensity > 0);
   }
+  // Every look keeps the +4 front independent of its steady multiplier.
+  for (const button of looks.slice(1)) {
+    button.click();
+    ids.awaken.click(); assertGrade(true);
+    now += 500 + 240 / 900 * 1000; timer();
+    assertGrade(false);
+    assert.ok(Math.abs(style({ properties: p }).emissiveIntensity - 4) < 1e-10,
+      `${button.dataset.look} front peak stays +4`);
+    now += 120 / 900 * 1000; timer();
+    const maximum = button.dataset.look === 'holographic' ? 0.45 : 0.30;
+    assert.ok(Math.abs(style({ properties: p }).emissiveIntensity - (2 + maximum / 2)) < 1e-10,
+      `${button.dataset.look} partially passed wave scales only steady light`);
+    now += 20000; timer();
+    assert.ok(Math.abs(style({ properties: p }).emissiveIntensity - maximum) < 1e-12,
+      `${button.dataset.look} completion uses its steady multiplier`);
+    assertGrade(false);
+  }
+  now = 0;
   ids['basemap-check'].click();
   looks[1].click(); looks[2].click(); activeLook = 'gold'; looks[0].click();
   assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex, 0xffffff);
