@@ -4,17 +4,14 @@ const { stripTypeScriptTypes } = require('node:module');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = stripTypeScriptTypes(readFileSync('src/awakening.ts', 'utf8').replace(/^import .*;\n/gm, ''));
-// Relative luminance from linearized sRGB (WCAG/Rec. 709 weights).
-const luminance = hex => [16, 8, 0].map(shift => {
-  const channel = ((hex >> shift) & 255) / 255;
-  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-}).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
 const palettes = {
   cyberpunk: { base: 0x111127, stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
   gold: { base: 0x171719, stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
   holographic: { base: 0x070d10, stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
 };
-async function check(place) {
+async function check(place, initiallyOff = false) {
+  let cloudsEnabled = !initiallyOff;
+  const cloudTextures = { overlay: {}, shadow: {}, shadowLength: {} };
   let now = 0, timer, interval, cameraCalls = 0, captured = false;
   const layers = [];
   const effects = [];
@@ -40,8 +37,9 @@ async function check(place) {
   let viewConfig;
   class View {
     constructor(config) { viewConfig = config; }
-    atmosphere = {}; attribution = { add() {} };
-    addPlugin() {} async init() {} addLight(config) { ambientConfig = config; return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect(value) { const effect = { config: value, update(value) { this.lastUpdate = value; } }; effects.push(effect); return effect; }
+    atmosphere = { overlay: { value: cloudTextures.overlay }, shadow: { value: cloudTextures.shadow },
+      shadowLength: { value: cloudTextures.shadowLength }, enableShadows: { value: true }, onUpdate() {} }; attribution = { add() {} };
+    addPlugin() {} async init() {} addLight(config) { ambientConfig = config; return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect(value) { const effect = { config: value, visible: true, update(value) { this.lastUpdate = value; } }; effects.push(effect); return effect; }
     addSource(value) { return value; }
     addLayer(value) { const layer = { ...value, update(value) { this.lastUpdate = value; }, listeners: {}, on(name, fn) { this.listeners[name] = fn; } }; layers.push(layer); return layer; }
     setCamera() { cameraCalls++; } forceUpdate() {}
@@ -49,7 +47,7 @@ async function check(place) {
   const context = vm.createContext({ Color, ThreeView: View,
     DefaultPlugin: class { addDefaultPhotorealScene(options) { sceneOptions = options; return { sun: { update(value) { sunConfig = value; } }, aerialPerspective: { update(value) { aerialUpdates.push(value); Object.assign(aerialState, value.aerialPerspective); } } }; } },
     document: { getElementById: id => ids[id], querySelectorAll: selector => selector === '[data-look]' ? looks : selector === '[data-place]' ? places : [...looks,...places,ids.awaken,ids.capture], createElement: () => new Element() },
-    window: { addEventListener(name, fn) { windowListeners[name] = fn; } }, location: { search: `?place=${place}` }, URLSearchParams,
+    window: { addEventListener(name, fn) { windowListeners[name] = fn; } }, location: { search: `?place=${place}${initiallyOff ? "&clouds=off" : ""}` }, URLSearchParams,
     performance: { now: () => now }, setInterval: (fn, ms) => { timer = fn; interval = ms; return 1; }, clearInterval: () => { timer = undefined; }, console,
   });
   vm.runInContext(source, context);
@@ -57,9 +55,30 @@ async function check(place) {
   assert.equal(context.window.__ready, true);
   assert.equal(viewConfig.shadow, true);
   assert.equal(viewConfig.atmosphere.date.toISOString(), '2026-11-05T08:40:00.000Z', 'initial Before time unchanged');
+  const assertClouds = () => {
+    const atmosphere = context.window.__view.atmosphere;
+    assert.equal(effects[0].visible, cloudsEnabled, 'cloud rendering pass enabled only when ON');
+    for (const key of ['overlay', 'shadow', 'shadowLength']) {
+      assert.equal(atmosphere[key].value, cloudsEnabled ? cloudTextures[key] : null, `${key}: detach OFF / restore exact reference ON`);
+    }
+    assert.equal(atmosphere.enableShadows.value, cloudsEnabled, 'atmosphere cloud shadow enable restored');
+    assert.equal(ids['cloud-toggle'].attrs['aria-pressed'], String(cloudsEnabled));
+    assert.equal(ids['cloud-toggle'].textContent, cloudsEnabled ? '雲 ON' : '雲 OFF');
+  };
+  const toggleClouds = () => {
+    const unchanged = () => JSON.stringify({ layers, aerialState, aerialUpdates, cameraCalls,
+      date: context.window.__view.atmosphere.date, exposure: context.window.__view.toneMappingExposure,
+      ambientIntensity, timer: !!timer });
+    const previous = unchanged();
+    cloudsEnabled = !cloudsEnabled;
+    ids['cloud-toggle'].click();
+    assertClouds();
+    assert.equal(unchanged(), previous, 'cloud diagnostic preserves camera, grade, materials and wave');
+  };
   const assertGrade = before => {
+    assertClouds();
     const view = context.window.__view;
-    const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
+    checkPhoto();
     assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T07:30:00.000Z');
     assert.equal(effects.find(effect => effect.config.clouds).lastUpdate.clouds.hazeDensityScale, before ? 3e-5 : 0);
     assert.ok(aerialUpdates.length > 0, 'aerial perspective explicitly applied');
@@ -73,34 +92,19 @@ async function check(place) {
       terrain: { castShadow: true, receiveShadow: true, lit: before } }), 'exact terrain config; Before lit / After unlit');
     assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.opacity, 1);
     if (before) {
-      assert.equal(tint, 0xd8a878, 'Before tint unchanged');
       assert.equal(ambientIntensity, 0.15, 'Before ambient unchanged');
       assert.equal(view.toneMappingExposure, 1.05, 'Before exposure unchanged');
     } else {
-      assert.ok(luminance(tint) > luminance(0x927349), 'After unlit ground tint brighter than old Gold');
       assert.equal(ambientIntensity, 0.3, 'After building ambient fill');
       assert.equal(view.toneMappingExposure, 1.1, 'exact applied unlit-ground exposure');
     }
   };
   const checkPhoto = () => {
-    const view = context.window.__view;
     const photo = layers.find(layer => layer.type === 'raster');
-    const original = JSON.stringify(photo.lastUpdate);
-    const untouched = () => JSON.stringify({ date: view.atmosphere.date, exposure: view.toneMappingExposure,
-      ambientIntensity, effects, aerialState, aerialUpdates, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
-      style: typeof style === 'function' ? style({ properties: p }) : null });
-    const before = untouched();
-    ids['basemap-check'].click();
-    assert.equal(photo.lastUpdate.raster.color.hex, 0xffffff);
-    assert.equal(photo.lastUpdate.raster.opacity, 1);
-    assert.equal(ids['basemap-check'].attrs['aria-pressed'], 'true');
-    assert.match(ids.status.textContent, /ベースマップ確認中/);
-    assert.equal(untouched(), before, 'ON changes only photo parameters');
-    ids['basemap-check'].click();
-    assert.equal(JSON.stringify(photo.lastUpdate), original, 'OFF restores complete photo grade');
-    assert.equal(untouched(), before, 'OFF preserves scene and animation');
-    assert.equal(ids['basemap-check'].attrs['aria-pressed'], 'false');
-    assert.doesNotMatch(ids.status.textContent, /ベースマップ確認中/);
+    assert.equal(photo.lastUpdate.raster.color.hex, 0xffffff, 'photo always white');
+    assert.equal(photo.lastUpdate.raster.opacity, 1, 'photo always opaque');
+    assert.equal(ids['basemap-check'], undefined, 'photo diagnostic toggle removed');
+    assert.doesNotMatch(ids.status.textContent ?? '', /ベースマップ確認/);
   };
   assert.equal(JSON.stringify(effects[0].config), JSON.stringify({ clouds: { coverage: 0.45, lightShafts: true, haze: true } }), 'cloud effects preserved');
   assert.equal(JSON.stringify(effects[1].config), JSON.stringify({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } }), 'bloom preserved');
@@ -120,12 +124,12 @@ async function check(place) {
   assert.equal(JSON.stringify(style({ properties: p })), JSON.stringify({ color: { hex: 0xffffff },
     emissive: { hex: 0 }, emissiveIntensity: 0, opacity: 1, show: true }), 'Before white material unchanged');
   checkPhoto();
+  toggleClouds();
   for (const button of looks.slice(1)) {
     activeLook = button.dataset.look;
     button.click();
     assertGrade(false);
-    assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex,
-      { cyberpunk: 0xa5b6da, gold: 0xe4c99f, holographic: 0xb1ced2 }[button.dataset.look], 'exact After tint');
+    toggleClouds(); toggleClouds();
     assert.equal(context.window.__view.toneMappingExposure, 1.1);
     checkPhoto();
     const palette = palettes[button.dataset.look];
@@ -162,11 +166,11 @@ async function check(place) {
       `${button.dataset.look} completion uses its steady multiplier`);
     assertGrade(false);
   }
+  toggleClouds();
   now = 0;
-  ids['basemap-check'].click();
   looks[1].click(); looks[2].click(); activeLook = 'gold'; looks[0].click();
   assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex, 0xffffff);
-  ids['basemap-check'].click(); assertGrade(true);
+  assertGrade(true);
   assert.equal(cameraCalls, 1, 'art comparisons preserve camera');
   ids.awaken.click();
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
@@ -176,6 +180,8 @@ async function check(place) {
   assertGrade(false);
   assert.match(ids.status.textContent, /覚醒中/);
   checkPhoto();
+  toggleClouds();
+  assertGrade(false);
   assert.ok(Math.abs(style({ properties: p }).emissiveIntensity - 4) < 1e-10, 'front adds exactly 4 at landmark');
   assert.equal(style({ properties: { ...p, _y: origin[1]+0.05 } }).emissiveIntensity, 0, 'distant buildings wait');
   assert.equal(style({ properties: {} }).emissiveIntensity, 0);
@@ -216,6 +222,13 @@ async function check(place) {
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
   looks[0].click(); assert.equal(timer, undefined);
   ids.capture.click(); assert.equal(captured, true);
-  console.log(`PASS ${place}: Before and exact unlit-ground After grades, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
+  for (const enabled of [false, true, false]) {
+    if (cloudsEnabled !== enabled) toggleClouds();
+    for (const button of places) {
+      button.click();
+      assert.equal(context.location.search, `?place=${button.dataset.place}${enabled ? '' : '&clouds=off'}`, 'location reload preserves cloud toggle');
+    }
+  }
+  console.log(`PASS ${place}: fixed photos and exact Before/After grades, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
 }
-(async () => { await check('tokyo'); await check('tocho'); })().catch(error => { console.error(error); process.exitCode = 1; });
+(async () => { for (const place of ['tokyo', 'tocho']) { await check(place); await check(place, true); } })().catch(error => { console.error(error); process.exitCode = 1; });

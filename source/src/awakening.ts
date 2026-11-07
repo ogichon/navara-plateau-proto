@@ -28,16 +28,16 @@ const PLACES: Record<
 
 type Direction = "cyberpunk" | "gold" | "holographic";
 type Phase = "before" | "after" | "wave" | "complete";
-// After terrain bypasses lighting; bright tints retain each ground hue.
+// After terrain bypasses lighting; aerial photos retain their original color.
 // Ambient fill and exposure support building faces independently of ground lighting.
 const LOOKS = {
-  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0xa5b6da, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
+  cyberpunk: { label: "Cyberpunk", base: 0x111127, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
     stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
-  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0xe4c99f, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
+  gold: { label: "Gold Apocalypse", base: 0x171719, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.0,
     stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
-  holographic: { label: "Holographic City", base: 0x070d10, tint: 0xb1ced2, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.5,
+  holographic: { label: "Holographic City", base: 0x070d10, ambient: 0.3, exposure: 1.1, steadyMultiplier: 1.5,
     stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
-} satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; steadyMultiplier: number; stops: number[][] }>;
+} satisfies Record<Direction, { label: string; base: number; ambient: number; exposure: number; steadyMultiplier: number; stops: number[][] }>;
 const initialPlace = new URLSearchParams(location.search).get("place");
 const placeKey = initialPlace === "tocho" ? "tocho" : "tokyo";
 const place = PLACES[placeKey];
@@ -57,7 +57,7 @@ const gradient = (stops: number[][], h: number) => {
 const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value);
 
 async function main() {
-  let basemapCheck = false;
+  let cloudsEnabled = new URLSearchParams(location.search).get("clouds") !== "off";
   let direction: Direction = "cyberpunk";
   let phase: Phase = "before";
   let radius = -240;
@@ -80,6 +80,33 @@ async function main() {
   scene.sun.update({ sun: { castShadow: true, shadowMapSize: 4096, shadowNormalBias: 0.5 } } as any);
   const ambient = view.addLight({ ambient: { intensity: 0.15, color: new Color().setHex(0x93a7cc) } } as any);
   const clouds = view.addEffect({ clouds: { coverage: 0.45, lightShafts: true, haze: true } } as any);
+  // visible=false stops the cloud pass, but leaves its atmosphere outputs attached.
+  // Detach all three public outputs too; retain textures/history for exact ON recovery.
+  let cloudOutputs: { overlay: typeof view.atmosphere.overlay.value;
+    shadow: typeof view.atmosphere.shadow.value;
+    shadowLength: typeof view.atmosphere.shadowLength.value;
+    enableShadows: boolean } | undefined;
+  const applyClouds = () => {
+    const atmosphere = view.atmosphere;
+    if (!cloudsEnabled && !cloudOutputs) {
+      cloudOutputs = { overlay: atmosphere.overlay.value, shadow: atmosphere.shadow.value,
+        shadowLength: atmosphere.shadowLength.value, enableShadows: atmosphere.enableShadows.value };
+      clouds.visible = false;
+      atmosphere.overlay.value = null;
+      atmosphere.shadow.value = null;
+      atmosphere.shadowLength.value = null;
+      atmosphere.enableShadows.value = false;
+    } else if (cloudsEnabled && cloudOutputs) {
+      atmosphere.overlay.value = cloudOutputs.overlay;
+      atmosphere.shadow.value = cloudOutputs.shadow;
+      atmosphere.shadowLength.value = cloudOutputs.shadowLength;
+      atmosphere.enableShadows.value = cloudOutputs.enableShadows;
+      cloudOutputs = undefined;
+      clouds.visible = true;
+    }
+    atmosphere.onUpdate();
+  };
+  applyClouds();
   view.addEffect({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } } as any);
   const terrainSource = view.addSource({
     type: "quantized-mesh",
@@ -154,28 +181,31 @@ async function main() {
   document.title = `TOKYO // AWAKENING — ${place.label}`;
   const report = () => {
     const state = phase === "before" ? "Before — 夕景 / 白モデル" : `${LOOKS[direction].label} — ${phase === "wave" ? `覚醒中 ${Math.max(0, Math.min(100, Math.round(radius / CITY_RADIUS * 100)))}%` : phase === "complete" ? "完了" : "After"}`;
-    setStatus(`${place.label} / ${state}${basemapCheck ? " / ベースマップ確認中" : ""}`);
+    setStatus(`${place.label} / ${state}`);
     document.querySelectorAll<HTMLButtonElement>("[data-look]").forEach(b => {
       const active = b.dataset.look === (phase === "before" ? "before" : direction);
       b.classList.toggle("active", active);
       b.setAttribute("aria-pressed", String(active));
     });
   };
-  // Raster-only diagnostic: never change scene lighting or building evaluation.
+  // Keep aerial photos unmodified in every phase and art direction.
   const applyPhoto = () => photoLayer.update({ raster: {
-    color: new Color().setHex(basemapCheck ? 0xffffff : phase === "before" ? 0xd8a878 : LOOKS[direction].tint),
+    color: new Color().setHex(0xffffff),
     opacity: 1,
   } } as any);
-  const photoButton = document.createElement("button");
-  photoButton.id = "basemap-check";
-  photoButton.textContent = "ベースマップ確認";
-  photoButton.setAttribute("aria-pressed", "false");
-  document.getElementById("capture")!.insertAdjacentElement("afterend", photoButton);
-  photoButton.addEventListener("click", () => {
-    basemapCheck = !basemapCheck;
-    photoButton.setAttribute("aria-pressed", String(basemapCheck));
-    applyPhoto(); view.forceUpdate(); report();
+  const cloudButton = document.createElement("button");
+  cloudButton.id = "cloud-toggle";
+  const reportClouds = () => {
+    cloudButton.textContent = cloudsEnabled ? "雲 ON" : "雲 OFF";
+    cloudButton.setAttribute("aria-pressed", String(cloudsEnabled));
+  };
+  cloudButton.setAttribute("aria-label", "体積雲の本体・影を切替（診断用）");
+  document.getElementById("capture")!.insertAdjacentElement("afterend", cloudButton);
+  cloudButton.addEventListener("click", () => {
+    cloudsEnabled = !cloudsEnabled;
+    applyClouds(); reportClouds(); view.forceUpdate();
   });
+  reportClouds();
   const grade = (before: boolean) => {
     const look = LOOKS[direction];
     view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T16:30:00+09:00");
@@ -214,7 +244,7 @@ async function main() {
   });
   document.querySelectorAll<HTMLButtonElement>("[data-place]").forEach(b => {
     b.setAttribute("aria-pressed", String(b.dataset.place === placeKey));
-    b.addEventListener("click", () => { location.search = `?place=${b.dataset.place}`; });
+    b.addEventListener("click", () => { location.search = `?place=${b.dataset.place}${cloudsEnabled ? "" : "&clouds=off"}`; });
   });
   document.getElementById("capture")!.addEventListener("click", () => {
     try {

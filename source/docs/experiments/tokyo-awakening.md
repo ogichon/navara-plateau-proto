@@ -181,3 +181,41 @@ npx vite build成功。全5ページ、Draco/font WASM、cloud/noise/waterディ
 確認段階：ビルド成功、モック適用値・挙動検証済み。ページ起動 / 3D Tiles取得成功 / レンダリング完了 / 実画像確認 / 修正後ユーザー目視確認はいずれも未実施。独立レビューは別セッションで未実施。**暫定・目視未検証。粒子が消えた／立体感が出たとは断言しない。** 次は実Chromeでローカル `/awakening.html?place=tokyo` と `?place=tocho` を同一カメラでBefore / 全3案・波・完了を比較する。期待する差は影サンプリング品質設定とHolographic定常発光の変更。面のムラ・建物形状・陰影・発光のバランスと作品品質はユーザー目視で判定する。デプロイ禁止のため公開URL更新なし。
 
 コミットは `git add` から試みたが、共有git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-holo/index.lock` が読み取り専用のため失敗。コミット未作成。変更は作業ツリーに保持。
+
+## 目視評価 #10 と診断トグル（2026-11-07 / exp/cloud-diag）
+
+ユーザー観測：東京駅・Holographic・Afterを大きく引くと、街と海上を雲形の暗い茶黒のまだらが覆う。既定近景には出ない。地面全体の一様な暗さとは分けて扱う。
+
+Q1/Q2の実コード調査を `docs/architecture.md` の CLOUD-DIAG 節に記録。現行Afterでは雲影マップの直接表面減光と太陽CSMのunlit地形色への影響は除外できるが、雲本体のoverlay合成とshadowLengthによるinscatter差は残る。低層雲は750–2200m、既定520m/-48°ではカメラ高さ約386m、同pitchで数km引けば低層雲の中／上から街を見る位置関係が成立しうる。正確なスクショのカメラ情報は未取得で、原因は断定しない。
+
+AWAKENINGに診断用「雲 ON / OFF」を追加。既定ON、coverage=.45、lightShafts/haze、グレード、影、建物色・発光、カメラ等の既存固定値は不変。OFFは公開handle.visible=falseで本体・影の描画パスを止め、公開atmosphereのoverlay/shadow/shadowLengthをnull、enableShadows=falseにする。ONは保存した同一参照とフラグを戻し、パスを再開。gradeは従来どおりhazeDensityScaleを更新し、トグル状態を上書きしない。場所切替はOFFのみURLの `clouds=off` を引き継ぐ（`?place=tokyo&clouds=off` / `?place=tocho&clouds=off`）。Before/After・波・pageshowでも保持する。
+
+検証：全 `scripts/test-*.cjs`（awakening / camera / underwater / cloud-mutations）成功。AWAKENINGは両地点×初期ON/OFF、OFFの3参照切離し・パス停止・影無効、ONの同一参照復帰、全グレード・波・場所切替保持をアサーションで固定。既存のグレード・影・発光の固定値検証も維持。隔離VMで13種の変異（停止漏れ、各参照の切離し／復帰漏れ、影フラグ、既定値、gradeリセット、場所の引継ぎ漏れ）すべてをアサーション失敗として検出。これはSDK/DOMのモックによる挙動検証でありGPU描画検証ではない。
+
+| 段階 | 今回の確認 |
+| --- | --- |
+| ビルド成功 | `npx vite build` 成功、全5ページ出力。既存のチャンクサイズ・configLoader警告あり |
+| ランタイムアセット | distにDraco/font WASM、cloud・noise・waterを確認。コピー設定は変更なし |
+| ページ起動 | 未確認 |
+| 3D Tiles取得成功 | 未確認 |
+| レンダリング完了 | 未確認 |
+| 実際のビジュアル確認 | 未確認 |
+| ユーザー目視確認 | トグル追加後は未確認。採点保留、暫定・目視未検証 |
+
+デプロイなし。次の実Chrome比較は、ローカル `/awakening.html?place=tokyo` のHolographic/Afterで評価#10と同じ広域カメラへ引き、構図・時刻・波状態を固定したまま雲だけON/OFF。期待する診断差は雲本体と雲の大気影響の有無。まだらが消えれば雲系経路の寄与を示すが、本体かshadowLengthかの単独確定には追加の比較が必要。残れば別経路を継続調査する。ON復帰後の同一条件、近景、Before、他案・場所でも確認する。公開URLは今回更新していない。
+
+GitHub Issue/PR一覧とPages状態の取得は、remote未設定およびAPI接続のネットワーク制限で失敗。実装とは別のCodexセッションによる独立レビューは今回未実施。
+
+コミット試行：`git add ... && git commit -m 'Add AWAKENING cloud diagnostic toggle and document rendering paths'` はgit add段階で失敗。共有Git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-cloud/index.lock` が `Read-only file system` のため作成不可。コミット未作成、変更はこのworktreeに保持し、制限回避は行っていない。
+
+## ユーザー決定による写真固定とトグル廃止（BRIEF-PHOTO、2026-11-07 / exp/photo-fixed）
+
+航空写真レイヤーを全状態（Before / 全3案After / wave / complete）で color=0xffffff・opacity=1 に固定した。案別の地面tint定義とBeforeの夕景ティントを写真適用から除去。「ベースマップ確認」ボタン・状態管理・ステータス文言を廃止した。建物base・全stop色、定常発光と倍率・波ピーク、地形lit切替、大気transmittance、雲haze、環境光・露出、太陽の影設定、雲トグルを維持。UNDERWATERは変更していない。
+
+検証：全 scripts/test-*.cjs（awakening / camera / underwater / cloud-mutations）成功。両地点×雲初期ON/OFFで各グレード・波・完了・再生・pageshow復帰の写真固定、トグル不在とステータス文言消去を検証。既存の建物・大気・地形・雲の厳密な値検証は維持した。メモリ内変異24/24をAssertionErrorで検出（既存の雲13種＋写真11種：全状態／Before／After／wave／各案の色、完了時上書き、opacity、UI・文言復活）。作業ソースへの変異書込みなし。
+
+npx vite build成功。全5ページ、Draco/font WASM、cloud/noise/waterのランタイムコピーを確認。既存のVite設定ロード・チャンクサイズ・Node実験API警告あり。package.jsonのnpm testは既存のダミーのため、実在する全テストを直接実行。git diff --check成功。GitHub Issue/PR/Pages取得はネットワーク制限で失敗。デプロイ・pushなし。
+
+確認段階：ビルド成功、モック上の値・挙動検証済み。ページ起動 / 3D Tiles取得 / レンダリング完了 / 実画像確認 / ユーザー目視確認は未実施。独立レビューは別セッションで未実施。暫定・目視未検証。次の確認は実Chromeのローカル awakening.html（tokyo / tocho）で同一カメラのBefore・全3案・waveを比較し、写真の色乗算がなく、建物・大気・雲の既存演出が保持されることを確認する。公開URLの更新なし。
+
+コミット試行：git addから実行したが、共有Git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-photo/index.lock` が Read-only file system のため失敗。コミット未作成、変更は作業ツリーに保持。制限回避は行っていない。

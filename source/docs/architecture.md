@@ -176,3 +176,46 @@ Navara公開CloudsOptions（pass.ts:45–100）と更新処理（CloudsEffectDes
 確認済みは公開型・更新コード・シェーダー経路・既定値のみ。ビルド / ページ起動 / 3D Tiles取得 / レンダリング完了 / 実画像確認 / 本調査に対するユーザー目視確認は今回すべて未実施。ドキュメントのみの追記なのでビルドや描画テストは行わず、差分・根拠パス・空白を検査する。判定は**暫定・目視未検証**。
 
 コミット試行結果：`git add docs/architecture.md && git commit -m ...` はgit add段階で失敗。共有管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-polish/index.lock` を作成できず、エラーは `Read-only file system`。コミット未作成、追記は作業ツリーに保持。制限回避は行わない。
+
+## CLOUD-DIAG — 目視評価 #10 の経路再調査（2026-11-07）
+
+対象は AWAKENING、After の terrain.lit=false / aerialPerspective.transmittance=false / irradiance=false。inscatter は既定 true、clouds は coverage=0.45 / lightShafts=true / haze=true、After の hazeDensityScale=0。以下はインストール済み SDK の実コードの判定であり、まだらの観測原因の確定ではない。
+
+### Q1 現行設定で地面ピクセルまで届く経路
+
+根拠パスの接頭辞は `node_modules/`。
+
+| 経路 | 現行 After の判定と根拠 |
+| --- | --- |
+| 雲本体のレイマーチと合成 | **効きうる**。地形メッシュへのラスタライズではなく、深度付きフルスクリーンのレイマーチ。`@takram/three-clouds/src/shaders/clouds.frag:812–855` は地面までのレイ距離で雲区間の終端を制限する。カメラと地面の間に雲があれば遮蔽される。`@navaramap/three-default-descs/src/effects/clouds/pass.ts:244–259` は atmosphereOverlay を大気へ渡し、`@takram/three-atmosphere/src/shaders/aerialPerspectiveEffect.frag:387–389` は最終色を `rgb*(1-overlay.a)+overlay.rgb` にする。irradiance・transmittance・地形unlitとは独立。暗い雲による覆いは可能だが、実画角での寄与は未確認 |
+| aerialPerspective の雲影 opticalDepth / sunTransmittance | **直接の表面減光には効かない**。同 frag:354–379 は shadow map を exp(-opticalDepth) にし、SUN_LIGHT / SKY_LIGHT 分岐の getSunSkyIrradiance にのみ渡す。irradiance=false は両方の照明分岐を無効にする（Navara `effects/aerialPerspective/effect.ts:179–195`）。その場合 radiance=inputColor.rgb。shadow map 値を最終色へ無条件に乗算するコードはない。unlit にしてもこの結論は変わらない |
+| 雲影の shadowLength / light shafts → inscatter | **効きうる**。Navara pass.ts:257–259 の shadowLength 転送は shadows と独立。Takram frag:278–280,381–382,133–150 は shadowLength を GetSkyRadianceToPoint へ渡し、INSCATTER で radiance に散乱を加える。`@takram/three-atmosphere/src/shaders/bruneton/runtime.glsl:318–335` は影区間の散乱を除く。transmittance=false でも加算量の空間差は残り、周囲より暗く見える可能性がある。元の地面色への直接乗算とは区別する。前回の「表面減光にはirradiance=true」という結論だけでは、この大気経路を除外できない |
+| 大気の距離透過による地面減光 | **効かない**。frag:142–144 の radiance*=transmittance は TRANSMITTANCE 分岐内。After は無効。inscatter や overlay が消える意味ではない |
+| 雲 haze | After は **密度0で寄与なし**。Navara pass.ts の hazeDensityScale setter は clouds.hazeDensityScale に伝達。Before は3e-5へ復帰するので診断OFFでは本体と一緒に止める。haze 0だけでは雲本体・shadowLength・shadow mapを停止できない |
+| 太陽 CSM → 地形の forward 色 | **After の地形色には効かない**。`@navaramap/three/src/mesh/tile/index.ts:475` → `material/overrideMaterialsForMRT.ts:41–59` の NVR_UNLIT、同:182–186 は outgoingLight を diffuseColor.rgb で上書きする。receiveShadow=true でも照明・影込みの outgoingLight は最終地形色に残らない。ただし影バッファ・法線は引き続き書く（同:26–30,190以降）。地形が影を落とすこと、lit建物へのCSM、Beforeの受影は残る |
+| 太陽 CSM の shadow buffer → 大気の後段照明 | **現行では効かない**。Navara `effects/aerialPerspective/lightingTerms.ts:62–75` は irradiance と normal buffer を条件にする。現行はirradiance=false。影バッファが存在するだけで unlit 地形を再減光しない |
+
+雲の時間再投影・低解像度 resolve は上記本体／shadowLength／影マップの品質に関わる経路であり、新たな無条件乗算ではない。bloom・露出・色調は結果の見え方へ影響するが、今回変更しない。海上でも深度を持つ地形ピクセルなら同じ式となる。背景ピクセルは同frag:281–315のsky/overlay分岐になるため、スクショの海がどちらかは深度未確認。
+
+### Q2 雲高度と広域カメラの位置関係
+
+Navara pass.ts:294以降は Takram CloudLayers.DEFAULT を4層にコピーし、アプリの cloudLayers 上書きはない。`@takram/three-clouds/src/CloudLayers.ts:36–81` のプリセットは以下。qualityPreset=medium は解像度・反復等の品質設定で、層高度のプリセットとは別。
+
+| 層 | altitude / height | 高度範囲 | 備考 |
+| --- | --- | --- | --- |
+| r | 750 / 650 m | 750–1400 m | densityScale=.2、shadow=true |
+| g | 1000 / 1200 m | 1000–2200 m | densityScale=.2、shadow=true |
+| b | 7500 / 500 m | 7500–8000 m | densityScale=.003 |
+| a | 0 / 0 m | 厚さ0 | CloudLayer.ts:46–48 の既定値、実体積なし |
+
+高度はSDKの惑星シェル／altitudeCorrection基準であり、各建物屋上からの高さではない。東京駅の既定 distance=520m、pitch=-48° の平面近似では注視点からのカメラ高さは約386m（520 sin48°）。既定の下向き中心レイは低層雲の下面750mより下なので、中心の地面までの雲本体交差はない。画面上端・水平線方向のレイまで含む断言ではない。
+
+同じpitchで引くと distance 約1.01kmで高さ750m、約1.35kmで1000m、約2.96kmで2200mに達する。数kmの距離ならカメラが低層雲の中または上に位置し、地面への下向きレイが雲の体積を通る条件が成立する。広域で本体が街を覆う位置関係は**可能**。実際の密度はcoverage、weather、レイの方向にも依存する。pitchや注視点高度を変えた場合は再計算が必要で、曲率も含めこれは概算。ユーザー画像の正確なカメラ座標・pitch・深度は取得していないため、その画像で雲が間にあると確定はできない。
+
+### 診断OFFの公開手段と復帰
+
+`EffectHandle.visible=false` → `BaseDesc.onUpdateConfig` → `Pass.visible/enabled`（`@navaramap/three/src/effects/effect.ts:54–77`）で雲パスの本体・ShadowPass更新を止める。ただし既存の atmosphere overlay / shadow / shadowLength は残るため、これだけでは不十分。
+
+`view.atmosphere` の公開Observed値（`@navaramap/three/src/atmosphere.ts:168–172`）3参照とenableShadowsを保存し、OFFで3参照をnull、enableShadows=falseにする。`effects/aerialPerspective/effect.ts:112–140` の購読で大気側にも即時反映。ONでは同じ参照・enableShadowsを戻し、visible=trueへ戻す。テクスチャや履歴を再生成せず、既存coverage・lightShafts・haze等を維持する。`CloudsEffectDesc.update()` は太陽方向コピーのみで、出力の生成は有効なパスの描画時に行われる。gradeのhazeDensityScale更新はプロパティ変更とneedsUpdate通知のみで、切り離した参照を戻さない。
+
+削除案も調べたが採用しない。BaseHandle.delete → EffectDesc.onDestroy → RenderPassOrchestrator.removePass はパスの登録を外すだけで、Clouds.dispose（3参照のnull化）を呼ばない。visibleだけ、shadowsだけ、coverage=0だけも完全停止にならない。SDKや複数雲エフェクト構成が変わる際はこの前提を再検証する。
