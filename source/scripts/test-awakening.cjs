@@ -19,6 +19,8 @@ async function check(place) {
   const layers = [];
   const effects = [];
   let ambientIntensity, ambientConfig, sunConfig, sceneOptions;
+  const aerialUpdates = [];
+  const aerialState = { transmittance: true, inscatter: true, irradiance: false };
   let activeLook = 'cyberpunk';
   const windowListeners = {};
   const showPage = persisted => windowListeners.pageshow({ persisted });
@@ -45,7 +47,7 @@ async function check(place) {
     setCamera() { cameraCalls++; } forceUpdate() {}
   }
   const context = vm.createContext({ Color, ThreeView: View,
-    DefaultPlugin: class { addDefaultPhotorealScene(options) { sceneOptions = options; return { sun: { update(value) { sunConfig = value; } } }; } },
+    DefaultPlugin: class { addDefaultPhotorealScene(options) { sceneOptions = options; return { sun: { update(value) { sunConfig = value; } }, aerialPerspective: { update(value) { aerialUpdates.push(value); Object.assign(aerialState, value.aerialPerspective); } } }; } },
     document: { getElementById: id => ids[id], querySelectorAll: selector => selector === '[data-look]' ? looks : selector === '[data-place]' ? places : [...looks,...places,ids.awaken,ids.capture], createElement: () => new Element() },
     window: { addEventListener(name, fn) { windowListeners[name] = fn; } }, location: { search: `?place=${place}` }, URLSearchParams,
     performance: { now: () => now }, setInterval: (fn, ms) => { timer = fn; interval = ms; return 1; }, clearInterval: () => { timer = undefined; }, console,
@@ -59,7 +61,13 @@ async function check(place) {
     const view = context.window.__view;
     const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
     assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T07:30:00.000Z');
-    assert.equal(effects.find(effect => effect.config.clouds).lastUpdate.clouds.hazeDensityScale, before ? 3e-5 : 1.5e-5);
+    assert.equal(effects.find(effect => effect.config.clouds).lastUpdate.clouds.hazeDensityScale, before ? 3e-5 : 0);
+    assert.ok(aerialUpdates.length > 0, 'aerial perspective explicitly applied');
+    assert.equal(JSON.stringify(aerialUpdates.at(-1)),
+      JSON.stringify({ aerialPerspective: { transmittance: before } }), 'only transmittance is updated');
+    assert.equal(aerialState.transmittance, before, 'Before restores / After disables extinction');
+    assert.equal(aerialState.inscatter, true, 'inscatter default preserved');
+    assert.equal(aerialState.irradiance, false, 'irradiance default preserved');
     const terrain = layers.find(layer => layer.type === 'terrain');
     assert.equal(JSON.stringify(terrain.lastUpdate), JSON.stringify({ type: 'terrain', source: terrain.source,
       terrain: { castShadow: true, receiveShadow: true, lit: before } }), 'exact terrain config; Before lit / After unlit');
@@ -79,7 +87,7 @@ async function check(place) {
     const photo = layers.find(layer => layer.type === 'raster');
     const original = JSON.stringify(photo.lastUpdate);
     const untouched = () => JSON.stringify({ date: view.atmosphere.date, exposure: view.toneMappingExposure,
-      ambientIntensity, effects, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
+      ambientIntensity, effects, aerialState, aerialUpdates, cameraCalls, layers: layers.filter(layer => layer !== photo), timer: !!timer, now,
       style: typeof style === 'function' ? style({ properties: p }) : null });
     const before = untouched();
     ids['basemap-check'].click();
@@ -166,6 +174,7 @@ async function check(place) {
   assertGrade(false);
   showPage(true);
   assert.match(ids.status.textContent, /完了/, 'pageshow preserves completion');
+  assertGrade(false);
   for (const persisted of [true, false]) {
     ids.awaken.click();
     now += 1000; timer();
@@ -179,8 +188,10 @@ async function check(place) {
   }
   looks[1].click(); showPage(false);
   assert.match(ids.status.textContent, /After/, 'pageshow preserves After');
+  assertGrade(false);
   looks[0].click(); showPage(true);
   assert.match(ids.status.textContent, /Before/, 'pageshow preserves Before');
+  assertGrade(true);
   ids.awaken.click();
   assert.match(ids.status.textContent, /Before/);
   assert.equal(style({ properties: p }).emissiveIntensity, 0);

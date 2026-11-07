@@ -179,8 +179,10 @@ async function main() {
   const grade = (before: boolean) => {
     const look = LOOKS[direction];
     view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T16:30:00+09:00");
-    // Lower haze optical depth only in After; preserve the original Before.
-    clouds.update({ clouds: { hazeDensityScale: before ? 3e-5 : 1.5e-5 } } as any);
+    // Remove distance extinction in After; restore defaults in Before.
+    // Leave inscatter unchanged to preserve the sky coloration.
+    scene.aerialPerspective.update({ aerialPerspective: { transmittance: before } } as any);
+    clouds.update({ clouds: { hazeDensityScale: before ? 3e-5 : 0 } } as any);
     // Layer.update replaces config: retain the source and shadow settings.
     terrainLayer.update({ type: "terrain", source: terrainSource,
       terrain: { castShadow: true, receiveShadow: true, lit: before } } as any);

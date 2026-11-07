@@ -152,3 +152,17 @@ Afterを20:00→指定の19:10 JSTに変更。ただしSDKの太陽方向計算�
 次の比較はユーザーの実Chromeでローカル `/awakening.html?place=tokyo` と `?place=tocho` を開き、同一カメラのBefore / 全3案、確認OFF→ON→OFFと、引いた画角を確認する。期待する変化は地形の低い太陽・環境光への依存解除。写真可読性・遠景暗化・建物形状の陰影・粒子・作品の魅力はユーザー側の目視評価が必要。公開URLの更新は本タスクのデプロイ禁止により行わない。
 
 コミットは `git add ... && git commit` を試みたが、共有git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-ground/index.lock` が読み取り専用のためgit add段階で失敗。コミット未作成、変更は作業ツリーに保持。
+
+## 目視評価 #8 と方式B 適用（BRIEF-DIST、2026-11-07）
+
+方式A公開後のユーザー目視評価「ほんとになおった？なおってない」を受け、unlitの後段に残る距離透過を対象に方式Bを適用した。After / wave / completeでは返却ハンドルのscene.aerialPerspective.updateでtransmittance=false、雲hazeDensityScale=0を適用。Beforeでは必ずtransmittance=true / hazeDensityScale=3e-5へ復帰する。inscatter / irradianceは更新せず既定を維持。BRIEF-GROUNDの地形lit切替・source・影設定、全3案ティント・環境光・露出、時刻、建物パレット・発光・伝播、写真確認トグルを維持した。
+
+検証：全3スイート（AWAKENING 2地点 / UNDERWATER 9ケース / CAMERA 3ケース）成功。大気ハンドルのモックで更新履歴と状態を保持し、transmittanceだけの厳密な更新内容、Before/全案/wave/complete/再生/pageshow復帰時の適用値、inscatter=true / irradiance=falseの保持、写真確認トグルで大気が変わらないことを検証。既存のBefore固定・BRIEF-GROUND・建物・伝播テストも維持した。一時ファイルのハーネスにソース変異を注入し、transmittance固定true/false・反転・更新削除、inscatter変更、After/Before haze、地形lit/影、Before tint/環境光/露出/時刻、After時刻、定常発光最小/傾き・前線、写真白/opacity、各案ティント/環境光/露出の29/29をAssertionErrorで検出した。作業ソースは変異させていない。
+
+npx vite build成功。全5ページ、Draco/font WASM、cloud/noise/waterディレクトリの実ファイル配置を確認。既存のVite設定ロード・チャンクサイズ・Node実験API警告あり。package.jsonのnpm testは既存の未設定ダミーのため、実在する全3スイートを直接実行。デプロイ・pushなし。GitHub Issues / PR / Pages状態はネットワーク制限で取得失敗。
+
+確認段階：ビルド成功とモック上の適用値・挙動確認まで。ページ起動 / 3D Tiles取得成功 / レンダリング完了 / 実画像確認 / 修正後ユーザー目視確認はいずれも未実施。独立レビューは別セッションで未実施。**暫定・目視未検証。距離減光や可読性の最終判定はユーザー目視に委ねる。**
+
+次の比較：実Chromeでローカル /awakening.html?place=tokyo と ?place=tocho を開き、同一カメラのBefore / 全3案、wave / complete、引いた画角、写真確認OFF→ON→OFFを比較する。期待する変化はAfterの大気透過による消光と雲hazeの除外。遠景・写真の可読性、空の色味、建物形状、粒子と作品としての品質は未判定。公開URLは本タスクのデプロイ禁止により更新しない。
+
+コミットはgit addから試みたが、共有git管理領域 /home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-dist/index.lock が読み取り専用のため失敗。コミット未作成、変更は作業ツリーに保持。git diff --check成功。
