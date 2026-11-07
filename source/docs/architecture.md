@@ -64,3 +64,30 @@ layer.forceUpdate(); // 再評価
 時刻前提もSDKで検算した。`@navaramap/three/src/atmosphere.ts:408` と同じ `getSunDirectionECEF(date, new Vector3())` を呼び、地点の単位法線との内積のasinで太陽高度を算出（Node、GPU不要）。東京駅 / 都庁で17:40は−12.169° / −12.110°、19:10は−30.362° / −30.300°、20:00は−40.460° / −40.398°。`@takram/three-atmosphere/src/getSunLightColor.ts` は太陽方向が地球と交差するとtransmittance=0。したがって指定日の19:10は日没直前ではなく夜であり、実際の太陽方向光・影の回復や明るい空を約束できない。時刻だけで距離暗化・STBNが自然消滅する根拠もない。この太陽高度の証拠を受け、ディレクターがAfterを同日16:30 JSTへ改訂した（東京の太陽高度は東京駅+1.512°／都庁+1.566°。独立レビューの再計算で確定）。実装も16:30へ変更し、実在する低い太陽方向光と長い影を狙う。人工キーライトや日付変更は追加しない。環境光は全案0.15、露出はCyberpunk 1.05 / Gold・Holographic 1.0へ下げ、夜用の持ち上げを解除する。描画上の影・写真可読性は目視未検証。
 
 調整方針（19:10 実装時点の旧方針。16:30 改訂で環境光・露出は上記の低太陽前提の値に置換済み。発光レンジのみ現行）: 定常発光0.55–1.2を0.12–0.30へ下げ（前線+4維持）、自己発光による面の均しを減らす。環境光の一様な持上げも0.6→0.45、露出はCyberpunk 1.7→1.4、他1.6→1.35とし、低下した発光を高露出で打ち消さない。地面ティントのv14相対輝度下限は維持。環境光0.45 / 露出1.35を今回の暫定下限とする。これは視覚最適値の実測ではなく、形状の読み取りを再評価するための設計値。太陽が地下のため立体感・写真可読性・空の改善はすべて目視未検証。
+
+## BRIEF-GROUND 改訂版 Q1〜Q3（2026-11-07、実装前調査）
+
+インストール済みパッケージの実コードを再調査。以下のパスは `node_modules/` 相対。以前の調査記録の行番号・内部実装の説明より、今回の実コードを優先する。GPU描画や可読性の実測ではない。
+
+### Q1: 地形lit切替 — 可、方式Aを採用
+
+terrainは `three-default-descs` のエフェクトdescではなく、engine組込みのリソースレイヤー。`@navaramap/three/src/type/index.ts:141–153` が `TerrainSourceLayerDescription` を公開型へ正規化する。`@navaramap/engine/navara_wasm.d.ts:2800–2873` の全設定項目は次のとおり（free/disposeは管理メソッドで設定ではない）。
+
+| 位置 | 全項目と公開入力型 |
+| --- | --- |
+| レイヤー | type: `"terrain"`、source?: `string \| Source`、terrain?: 下記オブジェクト、ellipsoid?: 同型（sourceなしの場合。sourceと排他） |
+| terrain / ellipsoid | castShadow?: boolean、lit?: boolean、receiveShadow?: boolean、showBoundingBox?: boolean、show?: boolean、skirtExaggeration?: number、skirt?: boolean |
+
+WASMのsetter自体はnull/undefinedも受理するが、TS公開型はNormalizeWASMClassでメソッドを除いたオプショナルプロパティ。`three/src/layer.ts:164–173` の `Layer.update()` → core.updateLayer。説明上は設定置換なので、更新にはtype/sourceと既存castShadow/receiveShadowも渡す。`three/src/mesh/tile/index.ts:475,1037` は初期生成と更新の両方でapplyLitOptionを呼ぶ。`three/src/material/overrideMaterialsForMRT.ts:27–57` はfalseでNVR_UNLITを立て、シェーダーの照明式をバイパスし、変更時にneedsUpdateを立てる。法線とshadow G-bufferは維持する。view全体のlitを変えずに地形だけ切替可能。Before=true（元のlit既定と同じ）、After=falseとする。これは地形の最終照明を外す処理であり、写真合成専用の設定ではない。
+
+### Q2: 大気transmittance / inscatter — 個別切替可（方式Bは適用不要）
+
+`three-default-plugin/src/index.ts:167–177,207–218,238–244` のaddDefaultPhotorealSceneはaerialPerspectiveのEffectHandleを返す。既存のscene.aerialPerspective.update({ aerialPerspective: { transmittance: false } })で更新可能。`three/src/index.ts:2518` 付近にはID指定のupdateEffectByIdもある。view.effectsという公開一覧APIは確認できず、内部layersManagerはprivateなので取得に使わない。返却ハンドルで十分。
+
+`three-default-descs/src/effects/AerialPerspectiveEffectDesc.ts:99–116` がinscatter / transmittance / irradianceを独立に反映し、`effects/aerialPerspective/effect.ts:38–43,155–198` は既定true / true / false。距離透過はunlitの後にも掛かるため、方式Aだけで距離暗化全体の解消を保証しない。優先順に従ってAを採用し、Bは不可ではなく未採用。既定の大気を維持する。
+
+### Q3: 雲hazeDensityScale=0 — 可（方式Cは適用不要）
+
+`three-default-descs/src/effects/clouds/pass.ts:73,130,522–526` でnumberを公開し既定3e-5、setterはそのままrawEffectへ代入。`effects/CloudsEffectDesc.ts:108–109` は !== undefined で更新するので0も通る。`@takram/three-clouds/src/shaders/clouds.frag:665–668` はdensityに乗算し、density < 1e-7でゼロを返すため0は許容される。距離寄与は同:682–697の光学的厚さ・alpha計算。方式Aでは指示通りAfter 1.5e-5 / Before 3e-5を維持し、Cは未採用。
+
+粒子については同パッケージのSTBN jitterと履歴合成の既調査が引き続き該当する。公開CloudsOptionsにSTBN jitter自体を切る項目はなく、観測ノイズの主因も未確定。雲削除・lightShafts削除や負荷増の品質変更は行わない。地形unlitが粒子を除去するとも主張しない。

@@ -18,7 +18,7 @@ async function check(place) {
   let now = 0, timer, interval, cameraCalls = 0, captured = false;
   const layers = [];
   const effects = [];
-  let ambientIntensity;
+  let ambientIntensity, ambientConfig, sunConfig, sceneOptions;
   let activeLook = 'cyberpunk';
   const windowListeners = {};
   const showPage = persisted => windowListeners.pageshow({ persisted });
@@ -35,15 +35,17 @@ async function check(place) {
   const looks = ['before','cyberpunk','gold','holographic'].map(look => new Element({ look }));
   const places = ['tokyo','tocho'].map(place => new Element({ place }));
   class Color { setHex(hex) { this.hex = hex; return this; } }
+  let viewConfig;
   class View {
+    constructor(config) { viewConfig = config; }
     atmosphere = {}; attribution = { add() {} };
-    addPlugin() {} async init() {} addLight() { return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect(value) { const effect = { config: value, update(value) { this.lastUpdate = value; } }; effects.push(effect); return effect; }
+    addPlugin() {} async init() {} addLight(config) { ambientConfig = config; return { update(value) { ambientIntensity = value.ambient.intensity; } }; } addEffect(value) { const effect = { config: value, update(value) { this.lastUpdate = value; } }; effects.push(effect); return effect; }
     addSource(value) { return value; }
     addLayer(value) { const layer = { ...value, update(value) { this.lastUpdate = value; }, listeners: {}, on(name, fn) { this.listeners[name] = fn; } }; layers.push(layer); return layer; }
     setCamera() { cameraCalls++; } forceUpdate() {}
   }
   const context = vm.createContext({ Color, ThreeView: View,
-    DefaultPlugin: class { addDefaultPhotorealScene() { return { sun: { update() {} } }; } },
+    DefaultPlugin: class { addDefaultPhotorealScene(options) { sceneOptions = options; return { sun: { update(value) { sunConfig = value; } } }; } },
     document: { getElementById: id => ids[id], querySelectorAll: selector => selector === '[data-look]' ? looks : selector === '[data-place]' ? places : [...looks,...places,ids.awaken,ids.capture], createElement: () => new Element() },
     window: { addEventListener(name, fn) { windowListeners[name] = fn; } }, location: { search: `?place=${place}` }, URLSearchParams,
     performance: { now: () => now }, setInterval: (fn, ms) => { timer = fn; interval = ms; return 1; }, clearInterval: () => { timer = undefined; }, console,
@@ -51,19 +53,25 @@ async function check(place) {
   vm.runInContext(source, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(context.window.__ready, true);
+  assert.equal(viewConfig.shadow, true);
+  assert.equal(viewConfig.atmosphere.date.toISOString(), '2026-11-05T08:40:00.000Z', 'initial Before time unchanged');
   const assertGrade = before => {
     const view = context.window.__view;
     const tint = layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex;
     assert.equal(view.atmosphere.date.toISOString(), before ? '2026-11-05T08:40:00.000Z' : '2026-11-05T07:30:00.000Z');
     assert.equal(effects.find(effect => effect.config.clouds).lastUpdate.clouds.hazeDensityScale, before ? 3e-5 : 1.5e-5);
+    const terrain = layers.find(layer => layer.type === 'terrain');
+    assert.equal(JSON.stringify(terrain.lastUpdate), JSON.stringify({ type: 'terrain', source: terrain.source,
+      terrain: { castShadow: true, receiveShadow: true, lit: before } }), 'exact terrain config; Before lit / After unlit');
+    assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.opacity, 1);
     if (before) {
       assert.equal(tint, 0xd8a878, 'Before tint unchanged');
       assert.equal(ambientIntensity, 0.15, 'Before ambient unchanged');
       assert.equal(view.toneMappingExposure, 1.05, 'Before exposure unchanged');
     } else {
-      assert.ok(luminance(tint) >= luminance(0x51628c), 'After ground meets v14 luminance floor');
-      assert.equal(ambientIntensity, 0.15, 'After low-sun ambient grade');
-      assert.equal(view.toneMappingExposure, ({ cyberpunk: 1.05, gold: 1.0, holographic: 1.0 })[activeLook], 'exact applied low-sun exposure');
+      assert.ok(luminance(tint) > luminance(0x927349), 'After unlit ground tint brighter than old Gold');
+      assert.equal(ambientIntensity, 0.3, 'After building ambient fill');
+      assert.equal(view.toneMappingExposure, 1.1, 'exact applied unlit-ground exposure');
     }
   };
   const checkPhoto = () => {
@@ -88,6 +96,11 @@ async function check(place) {
   };
   assert.equal(JSON.stringify(effects[0].config), JSON.stringify({ clouds: { coverage: 0.45, lightShafts: true, haze: true } }), 'cloud effects preserved');
   assert.equal(JSON.stringify(effects[1].config), JSON.stringify({ selectiveBloom: { strength: 0.85, radius: 0.6, threshold: 0.55, smoothing: 0.2 } }), 'bloom preserved');
+  assert.equal(sceneOptions, undefined, 'default atmosphere/deferred lighting unchanged');
+  assert.equal(JSON.stringify(sunConfig), JSON.stringify({ sun: { castShadow: true } }));
+  assert.equal(JSON.stringify(ambientConfig), JSON.stringify({ ambient: { intensity: 0.15, color: { hex: 0x93a7cc } } }));
+  assert.equal(JSON.stringify(layers.find(layer => layer.type === 'terrain').terrain),
+    JSON.stringify({ castShadow: true, receiveShadow: true }), 'initial terrain unchanged');
   assertGrade(true);
   assert.match(ids.status.textContent, /Before/);
   const building = layers.find(l => l.type === '3d-tiles');
@@ -96,15 +109,16 @@ async function check(place) {
   const p = { _x: origin[0], _y: origin[1], 'bldg:measuredHeight': 240 };
   const ev = { evaluate: fn => { style = fn; } };
   building.listeners.featureUpdated({ featureSetId: 1n, evaluator: ev });
-  assert.equal(style({ properties: p }).color.hex, 0xffffff);
+  assert.equal(JSON.stringify(style({ properties: p })), JSON.stringify({ color: { hex: 0xffffff },
+    emissive: { hex: 0 }, emissiveIntensity: 0, opacity: 1, show: true }), 'Before white material unchanged');
   checkPhoto();
   for (const button of looks.slice(1)) {
     activeLook = button.dataset.look;
     button.click();
     assertGrade(false);
     assert.equal(layers.find(layer => layer.type === 'raster').lastUpdate.raster.color.hex,
-      { cyberpunk: 0x51628c, gold: 0x927349, holographic: 0x586f77 }[button.dataset.look], 'exact After tint');
-    assert.equal(context.window.__view.toneMappingExposure, button.dataset.look === "cyberpunk" ? 1.05 : 1.0);
+      { cyberpunk: 0xa5b6da, gold: 0xe4c99f, holographic: 0xb1ced2 }[button.dataset.look], 'exact After tint');
+    assert.equal(context.window.__view.toneMappingExposure, 1.1);
     checkPhoto();
     const palette = palettes[button.dataset.look];
     assert.equal(style({ properties: p }).color.hex, palette.base, 'building base unchanged');
@@ -172,6 +186,6 @@ async function check(place) {
   assert.equal(style({ properties: p }).emissiveIntensity, 0);
   looks[0].click(); assert.equal(timer, undefined);
   ids.capture.click(); assert.equal(captured, true);
-  console.log(`PASS ${place}: Before and exact low-sun After grades, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
+  console.log(`PASS ${place}: Before and exact unlit-ground After grades, unchanged building palettes, three looks, fixed camera, distance wave, late tiles, completion, replay, cancellation, evaluator removal, pageshow reset, PNG capture path`);
 }
 (async () => { await check('tokyo'); await check('tocho'); })().catch(error => { console.error(error); process.exitCode = 1; });

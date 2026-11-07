@@ -28,13 +28,14 @@ const PLACES: Record<
 
 type Direction = "cyberpunk" | "gold" | "holographic";
 type Phase = "before" | "after" | "wave" | "complete";
-// Retain ground hues; low sun supplies directional light, with sunset-level fill/exposure.
+// After terrain bypasses lighting; bright tints retain each ground hue.
+// Ambient fill and exposure support building faces independently of ground lighting.
 const LOOKS = {
-  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0x51628c, ambient: 0.15, exposure: 1.05,
+  cyberpunk: { label: "Cyberpunk", base: 0x111127, tint: 0xa5b6da, ambient: 0.3, exposure: 1.1,
     stops: [[0, 0x32d8ed], [65, 0x7359ef], [150, 0xf044c0], [230, 0xffd578]] },
-  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0x927349, ambient: 0.15, exposure: 1.0,
+  gold: { label: "Gold Apocalypse", base: 0x171719, tint: 0xe4c99f, ambient: 0.3, exposure: 1.1,
     stops: [[0, 0x9d510e], [100, 0xe5a72e], [240, 0xffe8a0]] },
-  holographic: { label: "Holographic City", base: 0x070d10, tint: 0x586f77, ambient: 0.15, exposure: 1.0,
+  holographic: { label: "Holographic City", base: 0x070d10, tint: 0xb1ced2, ambient: 0.3, exposure: 1.1,
     stops: [[0, 0xdde9e8], [120, 0x98ceca], [240, 0x72bdb8]] },
 } satisfies Record<Direction, { label: string; base: number; tint: number; ambient: number; exposure: number; stops: number[][] }>;
 const initialPlace = new URLSearchParams(location.search).get("place");
@@ -86,7 +87,7 @@ async function main() {
     maxZoom: 18,
     requestVertexNormals: true, requestWaterMask: true,
   } as any);
-  view.addLayer({
+  const terrainLayer = view.addLayer({
     type: "terrain",
     source: terrainSource,
     terrain: { castShadow: true, receiveShadow: true },
@@ -180,6 +181,9 @@ async function main() {
     view.atmosphere.date = new Date(before ? "2026-11-05T17:40:00+09:00" : "2026-11-05T16:30:00+09:00");
     // Lower haze optical depth only in After; preserve the original Before.
     clouds.update({ clouds: { hazeDensityScale: before ? 3e-5 : 1.5e-5 } } as any);
+    // Layer.update replaces config: retain the source and shadow settings.
+    terrainLayer.update({ type: "terrain", source: terrainSource,
+      terrain: { castShadow: true, receiveShadow: true, lit: before } } as any);
     applyPhoto();
     ambient.update({ ambient: { intensity: before ? 0.15 : look.ambient } } as any);
     view.toneMappingExposure = before ? 1.05 : look.exposure;

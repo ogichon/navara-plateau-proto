@@ -125,3 +125,30 @@ Afterを20:00→指定の19:10 JSTに変更。ただしSDKの太陽方向計算�
 検証：全3スイート（AWAKENING 2地点 / UNDERWATER 9ケース / CAMERA 3ケース）とViteビルドが成功。AWAKENINGは16:30と各案の実際の適用環境光・露出を厳密一致で検証し、Before復帰・全案切替・波・haze・パレット・トグルの既存検証も維持。時刻、各案の環境光・露出、定常発光最小値・傾き、波ピーク、After/Before hazeの計12変異を一時コピーで実行し、すべてAssertionErrorで検出（12/12）。作業ソースの書換えなし。`git diff --check`成功。全5ページとDraco/font WASM、cloud/noise/waterのコピーをビルド出力で確認。既存のVite設定・チャンクサイズ・Node実験APIの警告あり。
 
 判定：**暫定・目視未検証**。ビルドとモック値・挙動の検証を、ページ起動 / 3D Tiles取得成功 / レンダリング完了 / 実画像確認 / ユーザー目視確認とは区別する（後者はいずれも今回未実施）。独立レビュー未実施。デプロイ・pushなし。次の実Chrome比較はローカル `/awakening.html?place=tokyo` と `?place=tocho`、同一カメラでBefore / 3案、確認ON/OFF。期待する変化は低い太陽による面の陰影と抑えた発光。写真可読性・影の実描画・遠景・粒子・作品としての魅力は未判定。
+
+## 目視評価 #6/#7 と構造修正（BRIEF-GROUND 改訂版、2026-11-07）
+
+ユーザー目視ではGoldの覚醒中・完了時とも地面がほぼ真っ黒で、ベースマップ確認ON（白ティント・opacity 1）でも同じ。引くとさらに暗くなるとの評価。ティントの微調整を打ち切り、実装前にパッケージ実コードからQ1〜Q3を調査して `docs/architecture.md` に記録した。
+
+**方式Aを採用**。公開terrain設定のlitが初期生成・更新双方で照明バイパスへ届くため、保持したterrainLayerのupdateでAfterのみlit=falseにする。Beforeはlit=trueで元の照明ありへ復帰。置換更新でsource・castShadow・receiveShadowを失わないよう全設定を渡す。view.litや建物の照明方式は変えない。
+
+| After適用値 | Cyberpunk | Gold | Holographic |
+| --- | --- | --- | --- |
+| 地形lit | false | false | false |
+| 写真ティント | 0xa5b6da | 0xe4c99f | 0xb1ced2 |
+| 建物用環境光 | 0.3 | 0.3 | 0.3 |
+| 露出 | 1.1 | 1.1 | 1.1 |
+
+ティントはいずれも旧Goldより明るい色を選定した暫定値。Beforeは17:40 JST / 地面0xd8a878 / 環境光0.15・色0x93a7cc / 露出1.05 / haze 3e-5 / 白モデル / 影ありを維持。Afterの16:30、建物パレット、定常発光0.12〜0.30・前線+4、haze 1.5e-5、雲とbloomを維持。ベースマップ確認ONは白ティント・opacity 1のまま、トグル自体は照明・地形lit・時計を変更しない。
+
+方式Bのtransmittanceとinscatterは返却されたscene.aerialPerspectiveのハンドルで個別に切替可能。方式CのhazeDensityScale=0も許容される。いずれも不可ではなく、優先するAが可能なので未採用。unlit後にも大気transmittance・雲hazeは作用するため、遠景の暗化が残る可能性がある。STBN jitterそのものを無効化する公開雲設定は確認できず、粒子の原因を実画像で切り分けていないため、雲を消す等の変更はしていない。
+
+検証：全3スイート（AWAKENING 2地点 / UNDERWATER 9ケース / CAMERA 3ケース）成功。AWAKENINGでは全案とwave開始・完了・再生リセット・pageshow復帰を通して地形lit、source/影設定、環境光、露出、ティント、時刻、hazeを固定。Before初期時刻・補助光色・白モデル・既存効果も固定し、確認ON/OFFが地形を含む写真以外を変えないことを維持した。一時的なメモリ上のソース変異で25/25をAssertionErrorで検出（地形After/Before/更新削除/影、Before/After時刻、Beforeティント/環境光/露出/haze、After haze、定常発光最小/傾き/前線、写真確認白/opacity、3案各ティント/環境光/露出）。作業ソースを書き換える検証ではない。
+
+`npx vite build` 成功。全5ページとDraco/font WASM・cloud/noise/water実ファイルの配置を確認。Vite設定ロード・大きいチャンク・Node実験APIの既存警告あり。package.jsonのnpm testは既存の未設定ダミーなので、実在する全3テストスイートを直接実行した。v14・UNDERWATER・CAMERA・Viteコピー処理・依存は変更なし。デプロイ・pushなし。
+
+確認段階：ビルド成功、モック上の適用値・挙動確認済み。ページ起動 / 3D Tiles取得成功 / レンダリング完了 / 実画像確認 / 修正後のユーザー目視確認はすべて未検証。**暫定・目視未検証。『見えるようになった』とは断言しない。** 独立レビューは別セッションで未実施。GitHubのopen Issuesは取得できたが、PR/Pages状態はCLIのネットワーク制限で取得失敗。
+
+次の比較はユーザーの実Chromeでローカル `/awakening.html?place=tokyo` と `?place=tocho` を開き、同一カメラのBefore / 全3案、確認OFF→ON→OFFと、引いた画角を確認する。期待する変化は地形の低い太陽・環境光への依存解除。写真可読性・遠景暗化・建物形状の陰影・粒子・作品の魅力はユーザー側の目視評価が必要。公開URLの更新は本タスクのデプロイ禁止により行わない。
+
+コミットは `git add ... && git commit` を試みたが、共有git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-ground/index.lock` が読み取り専用のためgit add段階で失敗。コミット未作成、変更は作業ツリーに保持。
