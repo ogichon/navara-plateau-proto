@@ -137,3 +137,27 @@ TERRAは既にこの公開オプションで `#070d12` を明示済み。`terra.
 別Codexセッションの読取りレビューで具体的な欠陥指摘なし。型・NaN経路・別hillshadeスロットの整合性を確認し、TERRAの2テストも通過。実WASMの未指定値と修正後描画は未検証という留保を維持した。
 
 `git add src/terra.ts scripts/test-terra.cjs scripts/test-terra-sdk.cjs docs/experiments/terra-proto.md` と `git commit -m 'fix: stabilize terra elevation heatmap and supply hillshade normals'` を順に試行した。両方exit 128、共有Git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-terra/index.lock` が `Read-only file system` のため失敗。コミット未作成。変更はこのworktreeに保持。未追跡node_modulesは追加していない。
+
+## 事前生成テクスチャ drape への切替（2026-11-09）
+
+ディレクター指示により、上記「ヒートマップ継続／フォールバック不採用」の判断を撤回。内蔵経路の色分離を実描画で確認できなかったため、mainから取り込み済みの `public/terrain/{z}/{x}/{y}.png`（z11–13、東京域139.55–139.95 / 35.52–35.86、158枚）を通常の raster-tile / raster として重ねる。事前生成の標高ティント＋陰影＋崖線強調であり、航空写真ではない。真俯瞰プレビューはディレクターが目視済みとの入力情報で、このセッションの目視確認ではない。
+
+- 地表はAWAKENINGと同じRe:Earth quantized-mesh（ellipsoid、maxZoom18、vertex normals / water mask要求）へ戻した。出典を併記。
+- URLは `new URL("terrain/", location.href).href` にプレースホルダーを連結。localhost直下とPagesのサブパスに追従し、クエリは引き継がない。raster sourceはminZoom11 / maxZoom13。既存Vite設定・タイルファイルは変更しない。
+- DEM heatmap / hillshadeレイヤー、ColorMap、elevationColormap設定、SDK sampleTerrain経路をTERRAページから撤去。`test-terra-sdk.cjs` は旧SDK数値問題の履歴的回帰テストとして変更せず、引き続き通過。
+- 地表素地の `view.globe.color` は背景と同じ #070d12。SDKの `three/src/material/macro/tileShader.ts` はatlasをalpha合成するため、タイルのない素地を暗くし、タイル自体への暗色乗算は行わない。境界の実際の馴染み方・領域外404時の挙動は未確認。
+- 低太陽（15:45 JST）、照明、露出1.1、暗背景、低速周回、最小UI、postRenderでの📸を維持。AWAKENINGで用いている低太陽の地面暗化対策を地形の `lit:false` に限って採用。事前生成色・陰影を保持し、太陽光による二重の暗化を避ける意図。ライトは維持するが、地表に動的な太陽陰影を保証するものではない。露出・トーンマッピングは引き続き作用する。実際の明るさ・写真ベースマップ相当の合成結果は未検証。
+- 診断はページから地理院 `dem_png` z12を直接fetch、createImageBitmapと2D canvasで該当ピクセルを取得し、符号付き24bit cmを復号（0x800000は欠測、負標高対応）。画像はfinallyでclose。30秒abort、従来3地点・参照標高・±30mの参考照合・例外表示を維持。これはRe:Earth地形やdrapeの取得検査ではない。
+- SDK 0.2.1の公開型 `TerrainMaterial`、quantized-mesh source、Globeとthreeソースを確認したが、地表標高全体の垂直誇張オプションは見つからない。hillshade.exaggerationは法線、skirtExaggerationは境界の裾のみで代用不可。従って `?exagg=` は未実装（指定しても作用なし）、既定6も適用しない。`__terra.verticalExaggeration.supported=false` に記録。将来公開APIが追加された時に再検討。
+
+### 検証と残る課題
+
+- `test-terra.cjs` の旧構成期待を新構成へ更新。従来5ケース（正常・通信例外・欠測・キャプチャ例外・初期化失敗）の検査を維持し、drapeのサブパスURL、素地色、直接fetch・ピクセル位置範囲・標高照合、負標高・海面0・欠測復号を確認。WebGLや実ネットワークのテストではない。
+- `node scripts/test-terra.cjs` / `test-terra-sdk.cjs` / `test-awakening.cjs` / `test-camera.cjs` / `test-cloud-mutations.cjs`（24/24）/ `test-underwater.cjs` はすべてexit0。
+- `npx vite build` 成功（6ページ）。158枚すべてのpublicとdistのPNGをbyte単位で照合、一致。Draco/font WASM・cloud/noise/waterのコピー成功。既存Vite設定・チャンクサイズ警告は残る。
+- ビルド成功と資産配置のみ確認。ページ起動、実DEM通信、Re:Earth地形取得、drape取得、全表示タイル完了、レンダリング完了、実ビジュアル確認、今回のユーザー目視確認は未検証。作品の採点・見た目の自己判定なし。
+- 次は許可されたChromeで同一カメラの地形・色・境界・低太陽時の明るさ・PNGを確認。デプロイは実施しない。GitHub Issue/PR/Pagesの読取りはproxy接続制限で失敗し、外部状態は取得できなかった。
+
+### 今回のコミット結果
+
+`git add src/terra.ts scripts/test-terra.cjs docs/experiments/terra-proto.md` および `git commit -m 'feat: switch TERRA to precomputed terrain texture drape'` を試行。いずれもexit128、共有Git管理領域の `index.lock` が `Read-only file system` のため失敗。コミット未作成。制限を回避せず、変更をworktreeに保持。未追跡node_modulesは追加していない。

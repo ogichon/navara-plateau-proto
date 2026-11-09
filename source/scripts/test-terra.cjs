@@ -28,37 +28,41 @@ async function check(mode = 'success') {
     setCamera(config) { cameras.push(config); }
     on(name, fn) { events[name] = fn; }
     forceUpdate() { this.forced = true; }
-    async sampleTerrainMostDetailed(source, positions, options) {
-      assert.equal(source, sources[0]); assert.equal(options.level, 12); assert.ok(options.signal);
-      if (mode === 'network') throw Error('network failed');
-      return positions.map((p, i) => ({ ...p, height: mode === 'missing' ? undefined : 50 - i * 25, level: 12 }));
-    }
+
   }
-  const document = { hidden: false, getElementById: id => ids[id], createElement: () => new Element(), addEventListener: (k, f) => docEvents[k] = f };
+  const document = { hidden: false, getElementById: id => ids[id], createElement: tag => tag === 'canvas' ? { getContext: () => ({
+    drawImage(bitmap) { this.index = bitmap.index; },
+    getImageData(x, y) { assert.ok(x >= 0 && x < 256 && y >= 0 && y < 256); const v = mode === 'missing' ? 0x800000 : [5630, 3650, 250][this.index]; return { data: [v >> 16, (v >> 8) & 255, v & 255, 255] }; },
+  }) } : new Element(), addEventListener: (k, f) => docEvents[k] = f };
   const window = { addEventListener: (k, f) => winEvents[k] = f };
+  let counterFetch = 0;
   const context = vm.createContext({ ThreeView: View, Color, ColorMap, DefaultPlugin: class {}, JAPAN_GSI_ELEVATION_DECODER: () => 'GSI',
-    window, document, console, AbortController, setTimeout, clearTimeout,
+    window, document, console, AbortController, setTimeout, clearTimeout, URL,
+    location: { href: 'https://example.org/proto/terra.html?test=1' },
+    fetch: async (url, options) => {
+      assert.match(url, /dem_png\/12\/\d+\/\d+\.png$/); assert.ok(options.signal);
+      if (mode === 'network') throw Error('network failed');
+      return { ok: true, blob: async () => ({ index: counterFetch++ }) };
+    },
+    createImageBitmap: async blob => ({ ...blob, close() {} }),
     requestAnimationFrame: f => { frames.set(++counter, f); return counter; }, cancelAnimationFrame: id => frames.delete(id) });
   vm.runInContext(source, context); await new Promise(r => setImmediate(r));
+  assert.equal(vm.runInContext('decodeDemPixel(0, 0, 0)', context), 0);
+  assert.equal(vm.runInContext('decodeDemPixel(255, 255, 156)', context), -1);
+  assert.equal(vm.runInContext('decodeDemPixel(128, 0, 0)', context), undefined);
+  assert.equal(vm.runInContext('new URL("terrain/", "http://localhost:5173/terra.html").href', context), 'http://localhost:5173/terrain/');
   const diag = window.__terra;
   if (mode === 'init') { assert.match(window.__error, /init failed/); assert.equal(window.__ready, undefined); return; }
   assert.equal(window.__ready, true);
-  assert.equal(sources.length, 1); assert.equal(sources[0].type, 'raster-dem'); assert.match(sources[0].url, /\/dem_png\//);
-  assert.equal(sources[0].maxZoom, 14); assert.equal(sources[0].elevationDecoder, 'GSI');
-  assert.equal(layers.length, 3); assert.equal(layers[0].type, 'terrain'); assert.equal(layers[0].terrain.lit, true);
-  assert.equal(layers[1].source, sources[0]); assert.equal(layers[1].raster.show, false);
-  assert.equal(layers[1].elevationHeatmap.minHeight, -5); assert.equal(layers[1].elevationHeatmap.maxHeight, 60);
-  // Regression: SDK evaluates both paths even with logarithmic:false. Missing
-  // boundary makes Math.log(undefined) NaN; 1 makes division by log(1) invalid.
-  const heatmap = layers[1].elevationHeatmap;
-  assert.equal(heatmap.logarithmic, false);
-  assert.ok(heatmap.logBoundary > 1 && Number.isFinite(Math.log(heatmap.logBoundary)), 'safe SDK logarithm uniforms');
-  assert.equal(layers[1].hillshade, undefined, 'hillshade must not replace the heatmap slot');
-  assert.equal(layers[2].type, 'raster'); assert.equal(layers[2].source, sources[0]);
-  assert.equal(layers[2].raster.show, false); assert.equal(layers[2].hillshade.exaggeration, 1);
-  assert.equal(layers[2].elevationHeatmap, undefined);
-  const lut = window.__view.globe.elevationColormap.lut;
-  assert.equal(lut.length, 256); assert.equal(lut[0][0], 16 / 255); assert.equal(lut[255][2], 140 / 255);
+  assert.equal(sources.length, 2); assert.equal(sources[0].type, 'quantized-mesh');
+  assert.match(sources[0].url, /terrain.reearth.land/);
+  assert.equal(sources[1].type, 'raster-tile');
+  assert.equal(sources[1].url, 'https://example.org/proto/terrain/{z}/{x}/{y}.png');
+  assert.equal(sources[1].minZoom, 11); assert.equal(sources[1].maxZoom, 13);
+  assert.equal(layers.length, 2); assert.equal(layers[0].terrain.lit, false);
+  assert.equal(layers[1].source, sources[1]); assert.equal(layers[1].type, 'raster');
+  assert.equal(window.__view.globe.color.hex, 0x070d12);
+  if (mode === 'success') for (const check of diag.sampleChecks) { assert.equal(check.consistent, true); assert.ok(Math.abs(check.delta) < 1e-10); }
   assert.equal(lights[1].sun.castShadow, true); assert.equal(lights[1].sun.shadowFar, 120000); assert.equal(window.__view.config.atmosphere.date.toISOString(), '2026-11-09T06:45:00.000Z');
   assert.equal(cameras[0].distance, 65000); assert.equal(cameras[0].pitch, -48);
   if (mode === 'network' || mode === 'missing') assert.equal(diag.errors.length, 1);
