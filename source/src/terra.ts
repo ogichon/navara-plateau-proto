@@ -2,16 +2,26 @@ import ThreeView, { Color, ColorMap, JAPAN_GSI_ELEVATION_DECODER } from "@navara
 import { DefaultPlugin, type DefaultDescriptions } from "@navaramap/three-default-plugin";
 
 const status = document.getElementById("status")!;
+const sampleSites = [
+  { name: "三鷹", lng: 139.570, lat: 35.700, referenceHeight: 56.3 },
+  { name: "新宿", lng: 139.670, lat: 35.695, referenceHeight: 36.5 },
+  { name: "日本橋", lng: 139.770, lat: 35.680, referenceHeight: 2.5 },
+];
+// Reference heights supplied from GSI elevation API measurements. At zoom 12,
+// use a loose 30 m tolerance as an advisory, never as the acquisition criterion.
+const heightTolerance = 30;
 const diagnostics = {
   initialized: false, frames: 0, idleObserved: false,
   terrain: { type: "raster-dem", url: "https://cyberjapandata.gsi.go.jp/xyz/dem/{z}/{x}/{y}.png", maxZoom: 14, tileSize: 256 },
   tint: { minHeight: -5, maxHeight: 60, low: "#103b43", high: "#c9b58c" },
   samples: [] as { lng: number; lat: number; height?: number; level?: number }[],
+  sampleChecks: [] as { name: string; referenceHeight: number; height?: number; delta?: number; finite: boolean; consistent: boolean | null }[],
+  heightTolerance,
   acquisition: "pending", errors: [] as string[], capture: "idle",
 };
 (window as any).__terra = diagnostics;
 function report() {
-  status.textContent = `DEM取得検査: ${diagnostics.acquisition} ／ 描画イベント ${diagnostics.frames > 0 ? "受信" : "待機"} ／ エラー ${diagnostics.errors.length}。全表示タイルの取得完了・見た目は未判定。`;
+  status.textContent = `DEM取得検査: ${diagnostics.acquisition} ／ 描画イベント ${diagnostics.frames > 0 ? "受信" : "待機"} ／ エラー ${diagnostics.errors.length}${diagnostics.errors.length ? `（最初: ${diagnostics.errors[0].slice(0, 120)}）` : ""}。全表示タイルの取得完了・見た目は未判定。`;
 }
 function recordError(error: unknown) {
   diagnostics.errors.push(String(error));
@@ -31,6 +41,7 @@ async function main() {
   const container = document.getElementById("app")!;
   const camera = { lng: 139.73, lat: 35.70, distance: 65000, heading, pitch: -48, roll: 0 };
   const view = new ThreeView<DefaultDescriptions>({ container, shadow: true,
+    // SDK constructor forwards backgroundColor to renderer.setClearColor().
     backgroundColor: new Color().setHex(0x070d12),
     atmosphere: { date: new Date("2026-11-09T15:45:00+09:00") } });
   view.addPlugin(new DefaultPlugin());
@@ -89,7 +100,8 @@ async function main() {
       link.href = canvas.toDataURL("image/png");
       link.download = "terra-naked-tokyo.png";
       link.click(); diagnostics.capture = "saved-unverified";
-      status.textContent = "PNG保存（画像内容・描画完了は未判定）";
+      report();
+      status.textContent += " PNG保存（画像内容・描画完了は未判定）";
     } catch (error) { diagnostics.capture = "failed"; recordError(error); }
   });
   view.on("idle", () => { diagnostics.idleObserved = true; report(); });
@@ -106,11 +118,19 @@ async function main() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    diagnostics.samples = await view.sampleTerrainMostDetailed(dem, [
-      { lng: 139.60, lat: 35.70 }, { lng: 139.70, lat: 35.70 }, { lng: 139.85, lat: 35.70 },
-    ], { level: 12, signal: controller.signal });
+    diagnostics.samples = await view.sampleTerrainMostDetailed(dem, sampleSites.map(({ lng, lat }) => ({ lng, lat })), { level: 12, signal: controller.signal });
     const complete = diagnostics.samples.length === 3 && diagnostics.samples.every(p => Number.isFinite(p.height));
+    diagnostics.sampleChecks = sampleSites.map(site => {
+      const height = diagnostics.samples.find(p => p.lng === site.lng && p.lat === site.lat)?.height;
+      const finite = Number.isFinite(height);
+      const delta = finite ? height! - site.referenceHeight : undefined;
+      return { name: site.name, referenceHeight: site.referenceHeight, height, delta, finite,
+        consistent: finite ? Math.abs(delta!) <= heightTolerance : null };
+    });
+    const comparison = diagnostics.sampleChecks.map(p =>
+      `${p.name}: ${p.finite ? `${p.height!.toFixed(1)}m / 実測差 ${p.delta!.toFixed(1)}m（${p.consistent ? "許容内" : "差大・参考警告"}）` : "欠測"}`).join("、");
     diagnostics.acquisition = complete ? "3地点取得・デコード完了" : "一部または全地点の標高なし";
+    diagnostics.acquisition += ` ／ 標高照合 ±${heightTolerance}m: ${comparison}`;
     if (!complete) recordError("DEM取得検査: 有効な標高が不足");
   } catch (error) { diagnostics.acquisition = "failed"; recordError(error); }
   finally { clearTimeout(timeout); report(); }

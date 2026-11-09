@@ -67,3 +67,25 @@ Nodeテストは実DEM通信・GPU描画の証明ではない。`npm test` は�
 ## コミット結果
 
 `git add` と `git commit -m 'feat: add terrain-only TERRA prototype with elevation tint'` を試行したが、どちらも共有Git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-terra/index.lock` を作成できず `Read-only file system`（exit 128）で失敗。コミット未作成。制限を回避せず変更をworktreeに保持。既存の未追跡ブリーフとnode_modulesは変更していない。
+
+## 診断改修・白い空白の調査（2026-11-09）
+
+変更は `src/terra.ts` と本記録のみ。デプロイなし。
+
+- DEM取得検査を三鷹（139.570, 35.700 / 56.3 m）、新宿（139.670, 35.695 / 36.5 m）、日本橋（139.770, 35.680 / 2.5 m）へ変更。参照標高はユーザー提供の地理院標高API実測値で、この環境で再取得した値ではない。zoom 12・30秒abortは維持。
+- 有限値3地点を取得成功の主条件として維持。各地点の取得標高・実測差・緩い許容±30 mとの照合を状態テキストへ表示し、`__terra.sampleChecks` と `heightTolerance` に保存する。差が大きい場合は参考警告に留め、取得失敗とは扱わない。欠測は照合不能（consistent: null）。
+- 状態テキストに最初のエラーの先頭120文字を表示。`__terra.errors` の全件・全文と `__error` の最新エラー記録は維持。PNG保存後も診断テキストを維持する。
+
+### 背景・クリア色の確認
+
+インストール済みSDKの `@navaramap/three/src/index.ts` のThreeViewオプションに `backgroundColor?: CoreColor` があり、コンストラクタ（1075行付近）で `options.backgroundColor.toHex()` を `this._renderer.setClearColor(bgColor)` に渡す。未指定時は黒。`src/passes/CustomRenderPass.ts`（418行付近）でも描画時の現在のクリア色・アルファを使ってレンダーターゲットをクリアする。
+
+TERRAは既にこの公開オプションで `#070d12` を明示済み。`terra.html` のhtml/body/app背景も同じ暗色である。したがって設定の追加・推測による色変更は行わず、SDK経路をコメントで明記した。白い空白の原因は未特定であり、修復済みとは判定しない。
+
+未検証の候補は、配信されたJS/HTMLの版やキャッシュの相違、初期化例外またはWebGLコンテキストの問題、SDKの合成パスや描画対象が白を出力する問題。DEM欠測だけでは白背景の説明にならない。次は実行環境で `__terra` / `__error`、配信アセット、WebGLコンテキスト、実際のフレームを確認して切り分ける必要がある。実DEM通信・ページ起動・レンダリング完了・実際のビジュアル・ユーザー目視は今回未確認。
+
+### 検証
+
+既存 `test-terra`（初期化失敗を含む5ケース）、`test-awakening`、`test-camera`、`test-cloud-mutations`（24/24）、`test-underwater` がすべてexit 0。変更範囲を維持するため既存テストファイルは変更せず、`/tmp` の追加テストで指定座標、背景オプション、実測から大きく外れた有限標高の参考警告と取得成功の両立、最初のエラー表示・全文記録を検証し通過。`npx vite build` 成功、Draco/font WASMとcloud/noise/waterコピー成功。既存Vite警告は残る。
+
+今回も `git add src/terra.ts docs/experiments/terra-proto.md` と `git commit -m 'fix: improve terra terrain and error diagnostics'` を試行したが、共有Git管理領域の `index.lock` を作成できず `Read-only file system`（exit 128）で失敗。コミット未作成。変更はworktreeに保持した。
