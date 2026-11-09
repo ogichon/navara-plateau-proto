@@ -77,6 +77,15 @@ def build_zoom(z):
     out = tint * (0.30 + 0.75 * shade)[..., None]
     out = out * (1 - edge[..., None] * 0.42) + GLOW[None, None, :] * (edge[..., None] * 0.42)
     out = np.where(mask[..., None], out, SEA[None, None, :])
+    # 領域の縁をページ背景色へ溶かす（矩形の断ち切りを消す）。全ズーム共通の
+    # 地理フェード: 端からの距離がフェード幅に達したら不透明。
+    BG = np.array([7, 13, 18], dtype=np.float32)
+    fade_px = max(24, int(min(H, W) * 0.045))
+    yy, xx = np.mgrid[0:H, 0:W]
+    dist = np.minimum(np.minimum(xx, W - 1 - xx), np.minimum(yy, H - 1 - yy))
+    f = np.clip(dist / fade_px, 0, 1)
+    f = (f * f * (3 - 2 * f))[..., None]
+    out = BG[None, None, :] * (1 - f) + out * f
     img = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
     count = 0
     for ty in range(y0, y1 + 1):
