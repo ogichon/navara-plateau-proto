@@ -43,7 +43,7 @@ async function check(mode = 'success') {
   const diag = window.__terra;
   if (mode === 'init') { assert.match(window.__error, /init failed/); assert.equal(window.__ready, undefined); return; }
   assert.equal(window.__ready, true);
-  assert.equal(sources.length, 1); assert.equal(sources[0].type, 'raster-dem'); assert.match(sources[0].url, /\/dem\//);
+  assert.equal(sources.length, 1); assert.equal(sources[0].type, 'raster-dem'); assert.match(sources[0].url, /\/dem_png\//);
   assert.equal(sources[0].maxZoom, 14); assert.equal(sources[0].elevationDecoder, 'GSI');
   assert.equal(layers.length, 2); assert.equal(layers[0].type, 'terrain'); assert.equal(layers[0].terrain.lit, true);
   assert.equal(layers[1].source, sources[0]); assert.equal(layers[1].raster.show, false);

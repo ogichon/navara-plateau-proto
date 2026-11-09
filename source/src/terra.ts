@@ -12,7 +12,7 @@ const sampleSites = [
 const heightTolerance = 30;
 const diagnostics = {
   initialized: false, frames: 0, idleObserved: false,
-  terrain: { type: "raster-dem", url: "https://cyberjapandata.gsi.go.jp/xyz/dem/{z}/{x}/{y}.png", maxZoom: 14, tileSize: 256 },
+  terrain: { type: "raster-dem", url: "https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png", maxZoom: 14, tileSize: 256 },
   tint: { minHeight: -5, maxHeight: 60, low: "#103b43", high: "#c9b58c" },
   samples: [] as { lng: number; lat: number; height?: number; level?: number }[],
   sampleChecks: [] as { name: string; referenceHeight: number; height?: number; delta?: number; finite: boolean; consistent: boolean | null }[],
