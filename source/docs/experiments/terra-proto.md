@@ -89,3 +89,51 @@ TERRAは既にこの公開オプションで `#070d12` を明示済み。`terra.
 既存 `test-terra`（初期化失敗を含む5ケース）、`test-awakening`、`test-camera`、`test-cloud-mutations`（24/24）、`test-underwater` がすべてexit 0。変更範囲を維持するため既存テストファイルは変更せず、`/tmp` の追加テストで指定座標、背景オプション、実測から大きく外れた有限標高の参考警告と取得成功の両立、最初のエラー表示・全文記録を検証し通過。`npx vite build` 成功、Draco/font WASMとcloud/noise/waterコピー成功。既存Vite警告は残る。
 
 今回も `git add src/terra.ts docs/experiments/terra-proto.md` と `git commit -m 'fix: improve terra terrain and error diagnostics'` を試行したが、共有Git管理領域の `index.lock` を作成できず `Read-only file system`（exit 128）で失敗。コミット未作成。変更はworktreeに保持した。
+
+## 根本原因の特定と修正（2026-11-09、ディレクター実測）
+
+クラウドブラウザで全サンプル欠測・白空白だった原因は、**DEMタイルのURLのプロダクト名誤り**だった。`xyz/dem/` は全ズームで404（地理院の現行プロダクトではない）。正しくは `xyz/dem_png/` で、実測: z10–z14で200、新宿のピクセルを復号すると 35.6–35.7m（標高API実測36.5mと整合）、z15は404のため maxZoom 14 は正しい。テスト側も誤URLを正として固定していたため併せて修正した。修正は src/terra.ts の1行＋テスト正規表現。環境要因ではなくコードのバグであり、実Chromeでも発生していたはずのもの。
+
+## 第2バグ: DEM復旧後の全面白表示（2026-11-09）
+
+### 採用経路と配線の判定
+
+**SDKの標高ヒートマップ経路を継続。事前生成ラスターへのフォールバックは不採用。** 現行の同一DEMを terrain と raster で共用し、`raster.show:false` と `elevationHeatmap` を併記する構成は、インストール済み `@navaramap/three` 0.2.1の公開仕様と一致する。heatmapをterrain自身へ移す根拠はなく、その変更は行わない。
+
+根拠（以下は `node_modules/@navaramap/` からの相対パス・今回の配布版の行番号）:
+
+| 確認対象 | ファイル・行 | 判定 |
+| --- | --- | --- |
+| ヒートマップの所属 | `three/dist/index.d.ts:9046–9068` | raster-demをrasterで描け、`elevationHeatmap` / `hillshade` / `raster` は並列。`raster.show` は符号化画像の表示だけに作用すると明記 |
+| terrain側の公開設定 | `three/dist/index.d.ts:10318–10361,10383–10404` | terrainは地表メッシュと照明・影などを設定。elevationHeatmapプロパティなし |
+| カラーマップの配線 | `core/src/globe/Globe.ts:158–165` → `three/src/index.ts:814–833` | setterからWASM LUTとGPUテクスチャを更新。現行の正規化sRGB LUTは `core/src/color/ColorMap.ts:17–30,69–80` の期待と一致 |
+| 可視面への合成 | `three/src/mesh/tile/index.ts:343–379,397–408` | 表示中かつテクスチャありのスロットをheatmapとして採用し、colormapと標高パラメータを渡す |
+| DEMから色への変換 | `three/src/material/enhancer/tileComposite/tileElevationHeatmapEnhancer/shader.ts:19–31` | DEMを復号・正規化してcolormapを参照。欠測は透明。符号化RGBの直接表示ではない |
+| enhancerの有効化 | `three/src/material/enhancer/tileComposite/compose.ts:27,45`、`tileElevationHeatmapEnhancer/mutates.ts:51–68`（同ディレクトリ） | heatmap種別から機能を有効化、LUTとデコード用uniformを供給 |
+
+配布パッケージにこの構成を示すexample/sample本体は見つからなかった。型だけでなく上記の実装と、実際に配信される `three/dist/index.js` の同等処理を確認した。
+
+### 修正した問題
+
+1. **線形モードでも対数経路にNaNが入る余地**: `three/src/mesh/tile/index.ts:1283–1285` は `Math.log(mat.logBoundary)` を無条件で計算する。配布GLSLは `three/dist/index.js:28714` の `normalizeElevationHeight` / `pseudoLog` / `nvr_branchFreeTernary`。線形モードの選択も `a * useA + b * (1 - useA)` であるため、未指定境界によるNaNを0倍しても除去できず、色参照座標へ伝播する。TERRAでは `logBoundary:10` を明示し、有限かつ非ゼロの `Math.log(10)` を渡す。`logarithmic:false` と−5〜60 mの線形範囲は維持。
+2. **DEM陰影用の法線経路がない**: 同じDEMを使う別rasterレイヤーに `raster:{show:false}, hillshade:{exaggeration:1}` を追加。`three/src/event/hillshade.ts:139–142,177–212` が共有DEMから法線マップを生成し、`three/src/material/enhancer/tileComposite/tileHillshadeEnhancer/shader.ts:7–33` が色を追加せず法線を合成する。`three/src/mesh/tile/index.ts:1287–1295` でhillshade機能を有効化する。heatmapとhillshadeを同一スロットに混在させない（同ファイル `351–369` でhillshadeが優先されるため）。照明強度や露出の推測調整は行っていない。
+
+補足の一次資料: [Navara利用ガイド](https://github.com/maplibre/navara/blob/main/skills/navara-usage/SKILL.md)の検索取得本文にも、logBoundary省略によるソフトウェアGLの単色化が記載されている。ただしページ本体のopenは404だったため、根拠の中心はインストール済みSDKと数値再現に置く。[上流Issue #826](https://github.com/maplibre/navara/issues/826)にはDEM地形の陰影にhillshadeが必要という開発者回答がある。Issueのサンプルは旧版0.1.1の構文なので転記せず、今回の0.2.1の型に従った。
+
+**数値的不具合経路と法線供給の欠落は確認したが、ユーザー環境の全白フレームの原因を実描画で確定したわけではない。** 実WASMからGPUに渡った未修正時のlogBoundary値やNaN、合成スロットの状態は今回読み戻していない。
+
+### 検証と未確認点
+
+- `node scripts/test-terra.cjs`: 既存5ケース通過。3レイヤーの同一DEM参照、符号化RGB非表示、線形heatmapの安全な境界値、独立hillshadeを回帰検証へ追加。既存の取得・ライフサイクル・キャプチャ・エラー検査を維持。
+- `node scripts/test-terra-sdk.cjs`: **インストール済みの配布GLSLから3つのスカラー関数を取り出し、演算をJSで実行**。未指定境界でNaN、境界10で−5/0/3.8/35.7/56.3/60 mが期待する線形値になることを確認。境界0の海面標高もNaNになる。GPU・ドライバ挙動の検証ではない。
+- awakening / camera / cloud-mutations（24/24）/ underwater の既存テストすべてexit 0。
+- `npx vite build` 成功、6ページ出力、Draco/font WASMとcloud/noise/waterコピー成功。既存のVite警告は残る。
+- ページ起動・実DEM通信・全タイル取得・レンダリング完了・修正後PNG・実際のビジュアル・ユーザー目視は未検証。採点・見た目の自己判定なし。次は許可されたChromeで同一カメラのPNGと標高色・陰影を確認する。
+- GitHub Issue/PR/Pages読取りと地理院タイルのcurlを試したが、設定済みproxyへの接続不可で取得できなかった。制限回避なし、外部書込みなし。
+- 変更対象は `src/terra.ts`、TERRA用の2テスト、本記録のみ。追加タイル資産は0 byte。生成スクリプト不要。デプロイなし。
+
+### 独立レビュー・コミット
+
+別Codexセッションの読取りレビューで具体的な欠陥指摘なし。型・NaN経路・別hillshadeスロットの整合性を確認し、TERRAの2テストも通過。実WASMの未指定値と修正後描画は未検証という留保を維持した。
+
+`git add src/terra.ts scripts/test-terra.cjs scripts/test-terra-sdk.cjs docs/experiments/terra-proto.md` と `git commit -m 'fix: stabilize terra elevation heatmap and supply hillshade normals'` を順に試行した。両方exit 128、共有Git管理領域 `/home/hatch/workspace/navara-tocho-proto/.git/worktrees/navara-wt-terra/index.lock` が `Read-only file system` のため失敗。コミット未作成。変更はこのworktreeに保持。未追跡node_modulesは追加していない。

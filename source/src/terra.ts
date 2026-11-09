@@ -62,7 +62,13 @@ async function main() {
     terrain: { lit: true, castShadow: true, receiveShadow: true } });
   // Hide encoded RGB imagery; only the SDK's decoded elevation heatmap is draped.
   view.addLayer({ type: "raster", source: dem, raster: { show: false },
-    elevationHeatmap: { minHeight: -5, maxHeight: 60, logarithmic: false } });
+    // Even linear mode evaluates pseudoLog in the SDK's branch-free shader.
+    // Keep log(boundary) finite and nonzero to avoid NaN-contaminated colors.
+    elevationHeatmap: { minHeight: -5, maxHeight: 60, logarithmic: false, logBoundary: 10 } });
+  // DEM geometry alone does not supply the hillshade normals used for lighting.
+  // Separate slot: hillshade takes precedence over heatmap within a single slot.
+  view.addLayer({ type: "raster", source: dem, raster: { show: false },
+    hillshade: { exaggeration: 1 } });
   view.attribution?.add([{ attribution: "国土地理院 標高タイル（DEM）を加工",
     attributionUrl: "https://maps.gsi.go.jp/development/ichiran.html#dem" }]);
   view.setCamera(camera);

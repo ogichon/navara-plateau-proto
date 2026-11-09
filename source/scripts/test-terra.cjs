@@ -45,9 +45,18 @@ async function check(mode = 'success') {
   assert.equal(window.__ready, true);
   assert.equal(sources.length, 1); assert.equal(sources[0].type, 'raster-dem'); assert.match(sources[0].url, /\/dem_png\//);
   assert.equal(sources[0].maxZoom, 14); assert.equal(sources[0].elevationDecoder, 'GSI');
-  assert.equal(layers.length, 2); assert.equal(layers[0].type, 'terrain'); assert.equal(layers[0].terrain.lit, true);
+  assert.equal(layers.length, 3); assert.equal(layers[0].type, 'terrain'); assert.equal(layers[0].terrain.lit, true);
   assert.equal(layers[1].source, sources[0]); assert.equal(layers[1].raster.show, false);
   assert.equal(layers[1].elevationHeatmap.minHeight, -5); assert.equal(layers[1].elevationHeatmap.maxHeight, 60);
+  // Regression: SDK evaluates both paths even with logarithmic:false. Missing
+  // boundary makes Math.log(undefined) NaN; 1 makes division by log(1) invalid.
+  const heatmap = layers[1].elevationHeatmap;
+  assert.equal(heatmap.logarithmic, false);
+  assert.ok(heatmap.logBoundary > 1 && Number.isFinite(Math.log(heatmap.logBoundary)), 'safe SDK logarithm uniforms');
+  assert.equal(layers[1].hillshade, undefined, 'hillshade must not replace the heatmap slot');
+  assert.equal(layers[2].type, 'raster'); assert.equal(layers[2].source, sources[0]);
+  assert.equal(layers[2].raster.show, false); assert.equal(layers[2].hillshade.exaggeration, 1);
+  assert.equal(layers[2].elevationHeatmap, undefined);
   const lut = window.__view.globe.elevationColormap.lut;
   assert.equal(lut.length, 256); assert.equal(lut[0][0], 16 / 255); assert.equal(lut[255][2], 140 / 255);
   assert.equal(lights[1].sun.castShadow, true); assert.equal(lights[1].sun.shadowFar, 120000); assert.equal(window.__view.config.atmosphere.date.toISOString(), '2026-11-09T06:45:00.000Z');
