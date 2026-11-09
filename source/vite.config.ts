@@ -57,6 +57,7 @@ export default defineConfig({
         underwater: "underwater.html",
         camera: "camera.html",
         terra: "terra.html",
+        float: "float.html",
       },
     },
   },
