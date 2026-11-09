@@ -4,7 +4,7 @@ const { stripTypeScriptTypes } = require('node:module');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const THREE = require('three');
-const code = stripTypeScriptTypes(readFileSync('src/float.ts', 'utf8').replace(/^import .*;\n/gm, ''));
+const code = stripTypeScriptTypes(readFileSync(process.env.FLOAT_SOURCE || 'src/float.ts', 'utf8').replace(/^import .*;\n/gm, ''));
 const events = {}, winEvents = {}, docEvents = {}, frames = new Map(), layers = [], sources = [];
 let seq = 0;
 class View {
@@ -26,6 +26,7 @@ const context = vm.createContext({ ...THREE, ThreeView: View, DefaultPlugin: cla
   assert.equal(sources.some(s => s.type === 'raster-tile'), false);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,1, 1,0,0, 1,1,0], 3));
+  geo.setAttribute('_batchid', new THREE.Float32BufferAttribute([1, 0, 1, 2], 1));
   geo.setAttribute('batchId', new THREE.Float32BufferAttribute([901, 42, 901, 8], 1));
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial());
   mesh.customDepthMaterial = new THREE.MeshStandardMaterial();
@@ -70,12 +71,62 @@ const context = vm.createContext({ ...THREE, ThreeView: View, DefaultPlugin: cla
   document.hidden = true; docEvents.visibilitychange(); assert.equal(frames.size, 0);
   document.hidden = false; docEvents.visibilitychange(); assert.equal(frames.size, 1);
   layers[1].events.featureRemoved({ featureSetId: 1n }); assert.equal(window.__float.appliedBuildings, 0);
+  // Execute the installed SDK's actual conversion block, rather than mocking
+  // its output. This exposes its raw-array traversal on interleaved attributes.
+  const sdk = readFileSync('node_modules/@navaramap/three/src/mesh/model.ts', 'utf8');
+  const conversion = sdk.slice(sdk.indexOf('    const vertCnt ='), sdk.indexOf('    mesh.castShadow ='));
+  assert.ok(conversion.includes('for (const internalBatchId of internalBatchIds)'));
+  const convert = new Function('mesh', 'batchIds', 'dataSize', 'BufferAttribute', stripTypeScriptTypes(conversion));
+  function fixture(publicIds, heights, featureSetId, layer) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(18), 3));
+    // Logical local IDs: 0,0,0,1,1,1. Neighbour fields deliberately contain
+    // valid IDs, so the old mapping silently succeeds and tears buildings.
+    const data = new THREE.InterleavedBuffer(new Float32Array([1,0, 1,0, 1,0, 0,1, 0,1, 0,1]), 2);
+    geometry.setAttribute('_batchid', new THREE.InterleavedBufferAttribute(data, 1, 1));
+    const m = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+    m.customDepthMaterial = new THREE.MeshStandardMaterial();
+    convert(m, new Uint32Array(publicIds), 1, THREE.BufferAttribute);
+    const evaluator = { obj: { traverseMesh: f => f(m) }, readFeatureProperties(f) {
+      heights.forEach((h, i) => f({ batchId: publicIds[i], properties: { 'bldg:measuredHeight': h } }, i));
+    } };
+    layer.events.featureUpdated({ featureSetId, evaluator });
+    return m;
+  }
+  const first = fixture([42,901], [20,80], 10n, layers[1]);
+  const second = fixture([42,901], [100,200], 10n, layers[2]);
+  assert.deepEqual([...first.geometry.getAttribute('batchId').array], [901,42,901,42,901,42]);
+  assert.deepEqual([...first.geometry.getAttribute('floatLift').array], [10,10,10,40,40,40]);
+  assert.deepEqual([...second.geometry.getAttribute('floatLift').array], [50,50,50,100,100,100]);
+  assert.equal(window.__float.appliedBuildings, 4); // layer + set + local ID
+  assert.equal(window.__float.checkedBuildings, 4);
+  assert.equal(window.__float.inconsistentBuildings, 0);
+  assert.equal(window.__float.publicIdMismatches, 8);
+  assert.ok(window.__float.idSamples.some(s => s.batchId !== s.geometryBatchId));
+  layers[1].events.featureRemoved({ featureSetId: 10n });
+  assert.equal(window.__float.appliedBuildings, 2);
+  layers[2].events.featureRemoved({ featureSetId: 10n });
+  assert.equal(window.__float.checkedBuildings, 0);
+  // Same layer, two genuinely distinct feature sets reuse local IDs 0/1.
+  const third = fixture([8,9], [30,60], 11n, layers[1]);
+  const fourth = fixture([11,12], [70,90], 12n, layers[1]);
+  assert.deepEqual([...third.geometry.getAttribute('floatLift').array], [15,15,15,30,30,30]);
+  assert.deepEqual([...fourth.geometry.getAttribute('floatLift').array], [35,35,35,45,45,45]);
+  assert.equal(window.__float.appliedBuildings, 4);
+  assert.equal(window.__float.inconsistentBuildings, 0);
+  layers[1].events.featureRemoved({ featureSetId: 11n });
+  layers[1].events.featureRemoved({ featureSetId: 12n });
+  // Independent validator must detect variation (including across primitives).
+  context.testIds = new THREE.Float32BufferAttribute([0,0,1], 1);
+  context.testLift = new THREE.Float32BufferAttribute([10,11,40], 1);
+  const checked = vm.runInContext('(() => { const r = new Map(); inspectLift(testIds, testLift, r); return [...r.values()]; })()', context);
+  assert.equal(checked.filter(r => r.max > r.min).length, 1);
   // An unmapped global ID must stop the experiment instead of an offset fallback.
   const bad = { obj: model, readFeatureProperties: f => f({ batchId: 99, properties: { 'bldg:measuredHeight': 10 } }, 0) };
   const badMesh = new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial());
   bad.obj = { traverseMesh: f => f(badMesh) };
   layers[1].events.featureUpdated({ featureSetId: 2n, evaluator: bad });
-  assert.equal(window.__float.stopped, true); assert.match(window.__float.errors[0], /batchId=901/);
+  assert.equal(window.__float.stopped, true); assert.match(window.__float.errors[0], /batchIndex=1/);
   assert.equal(frames.size, 0);
-  console.log('PASS FLOAT: global batchId mapping, clamp, missing heights, enhancer/depth composition, shared breathing uniform, lifecycle, removal, fail-closed mapping');
+  console.log('PASS FLOAT: local batchIndex mapping, installed SDK interleaving reproduction, two-set collision, per-building validation, clamp, missing heights, enhancer/depth composition, shared breathing uniform, lifecycle, removal, fail-closed mapping');
 })().catch(error => { console.error(error); process.exitCode = 1; });
