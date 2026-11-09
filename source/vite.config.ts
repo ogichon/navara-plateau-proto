@@ -56,6 +56,7 @@ export default defineConfig({
         awakening: "awakening.html",
         underwater: "underwater.html",
         camera: "camera.html",
+        terra: "terra.html",
       },
     },
   },
