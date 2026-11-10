@@ -40,7 +40,7 @@ function buildLiftAttribute(ids: ScalarIds, heights: Map<number, number>) {
   for (let i = 0; i < ids.count; i++) {
     const id = ids.getX(i);
     if (!Number.isInteger(id) || !heights.has(id)) throw new Error(`頂点batchIndex=${id}に対応するfeatureがありません`);
-    values[i] = Math.min(120, Math.max(0, heights.get(id)! * 0.5));
+    values[i] = Math.min(240, Math.max(0, heights.get(id)! * 1.2));
     if (values[i] > 0) applied.add(id);
   }
   return { attribute: new BufferAttribute(values, 1), applied };
@@ -121,8 +121,8 @@ async function main() {
   window.addEventListener("pageshow", () => { hidden = false; start(); });
   document.addEventListener("visibilitychange", () => { stop(); start(); });
   await view.init();
-  view.globe.color = new Color().setHex(0x242a31);
-  view.addLight({ ambient: { intensity: 0.45, color: new Color().setHex(0xbdcbdc) } });
+  view.globe.color = new Color().setHex(0x23262a);
+  view.addLight({ ambient: { intensity: 0.55, color: new Color().setHex(0xbdcbdc) } });
   view.addLight({ sun: { intensity: 2.5, applyColor: true, castShadow: true,
     shadowFar: 12000, shadowMapSize: 4096, shadowNormalBias: 0.5 } } as any);
   view.toneMappingExposure = 1.1;
@@ -243,7 +243,7 @@ async function main() {
     { attribution: "Project PLATEAU 中央区 (2023) — MLIT", attributionUrl: "https://www.geospatial.jp/ckan/dataset/plateau-13102-chuo-ku-2023" },
     { attribution: "© Re:Earth Terrain", attributionUrl: "https://terrain.reearth.land/" },
   ]);
-  view.setCamera({ lng: 139.7671, lat: 35.6812, distance: 2600, heading: 25, pitch: -42, roll: 0 });
+  view.setCamera({ lng: 139.7671, lat: 35.6812, distance: 3400, heading: 25, pitch: -52, roll: 0 });
   diagnostics.initialized = true;
   report(); start();
 }

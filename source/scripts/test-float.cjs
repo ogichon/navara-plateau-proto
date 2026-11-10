@@ -40,7 +40,7 @@ const context = vm.createContext({ ...THREE, ThreeView: View, DefaultPlugin: cla
     f({ batchId: 8, properties: {} }, 2);
   } };
   layers[1].events.featureUpdated({ featureSetId: 1n, evaluator });
-  assert.deepEqual([...geo.getAttribute('floatLift').array], [40,120,40,0]);
+  assert.deepEqual([...geo.getAttribute('floatLift').array], [96,240,96,0]);
   assert.equal(window.__float.appliedBuildings, 2);
   assert.equal(window.__float.missingHeights, 1);
   const shaders = [mesh.material, mesh.customDepthMaterial].map(m => {
@@ -96,8 +96,8 @@ const context = vm.createContext({ ...THREE, ThreeView: View, DefaultPlugin: cla
   const first = fixture([42,901], [20,80], 10n, layers[1]);
   const second = fixture([42,901], [100,200], 10n, layers[2]);
   assert.deepEqual([...first.geometry.getAttribute('batchId').array], [901,42,901,42,901,42]);
-  assert.deepEqual([...first.geometry.getAttribute('floatLift').array], [10,10,10,40,40,40]);
-  assert.deepEqual([...second.geometry.getAttribute('floatLift').array], [50,50,50,100,100,100]);
+  assert.deepEqual([...first.geometry.getAttribute('floatLift').array], [24,24,24,96,96,96]);
+  assert.deepEqual([...second.geometry.getAttribute('floatLift').array], [120,120,120,240,240,240]);
   assert.equal(window.__float.appliedBuildings, 4); // layer + set + local ID
   assert.equal(window.__float.checkedBuildings, 4);
   assert.equal(window.__float.inconsistentBuildings, 0);
@@ -110,8 +110,8 @@ const context = vm.createContext({ ...THREE, ThreeView: View, DefaultPlugin: cla
   // Same layer, two genuinely distinct feature sets reuse local IDs 0/1.
   const third = fixture([8,9], [30,60], 11n, layers[1]);
   const fourth = fixture([11,12], [70,90], 12n, layers[1]);
-  assert.deepEqual([...third.geometry.getAttribute('floatLift').array], [15,15,15,30,30,30]);
-  assert.deepEqual([...fourth.geometry.getAttribute('floatLift').array], [35,35,35,45,45,45]);
+  assert.deepEqual([...third.geometry.getAttribute('floatLift').array], [36,36,36,72,72,72]);
+  assert.deepEqual([...fourth.geometry.getAttribute('floatLift').array], [84,84,84,108,108,108]);
   assert.equal(window.__float.appliedBuildings, 4);
   assert.equal(window.__float.inconsistentBuildings, 0);
   layers[1].events.featureRemoved({ featureSetId: 11n });

@@ -78,3 +78,18 @@ SDKの変換部には `for (const internalBatchId of attrs._batchid.array)` が�
 次の確認は、許可された実Chromeで `float.html` を開き、検証建物>0 / floatLift不一致0を確認し、`window.__float.idSamples` のstride/offsetと2種の公開IDを保存すること。公開ID不一致が出れば旧SDK変換の破損を実データ上でも裏付けられる。不一致0でもGPU・影・実機の破断解消までは保証しない。
 
 コミット結果: 今回も `git add` と `git commit` を実際に試みたが、共通git管理領域の `index.lock` を作成できず両方失敗（Read-only file system）。変更は作業ツリーに保存済み、未ステージ・未コミット。権限制約を回避する操作は行っていない。
+
+## 浮きの視認性強化 — 2026-11-10
+
+オーナー実機スクショでは箱形状の破断は解消した一方、浮上がほぼ読み取れず通常の灰色都市に見えたとの報告を受けた改修。低中層の浮き量、暗い地面、初期カメラの角度を原因候補として扱い、以下を変更した。
+
+- 基準浮き量を `clamp(bldg:measuredHeight × 1.2, 0, 240)` m に変更。24秒周期・倍率 `1 + 0.15*sin(time)` の呼吸は維持（上限240mは呼吸適用前、最大呼吸時276m）。欠測・非数値・負の高さの扱いは維持。
+- 地形が参照する `view.globe.color` を `#23262a` に設定。環境光の強度を0.45から0.55へ微増し、建物底面の補助照明を意図した。環境光色、太陽の15:45 JST・強度2.5、露出1.1、地形のlit / receiveShadow設定は維持。影と地面のコントラストが実スクショで読めるかは未検証。
+- 東京駅の注視点（139.7671, 35.6812）とheading 25°を維持し、初期カメラを距離3400m・pitch −52°に変更。
+- 既存の建物単位floatLift自己検証、公開ID比較、診断ログ、通常／影shaderへの変位合成、異常時停止を維持。既存FLOATテストの浮き量期待値のみ新式へ更新。
+
+検証: `node scripts/test-float.cjs` 成功（局所ID対応、interleaved再現、建物単位不一致検出、上限clamp、欠測、影shader合成、呼吸範囲、ライフサイクル等）。`npx vite build` 成功（全7ページ、Draco/font worker WASM・cloud/noise/waterコピー確認）。`git diff --check` 成功。これらはGPU描画の証明ではない。
+
+ページ起動 / 今回の3D Tiles取得 / GPUレンダリング完了 / 実ビジュアル確認 / 今回のユーザー目視確認は未実施。見た目の自己判定・採点なし。次の実機確認では、検証建物>0・floatLift不一致0を確認した上で、浮いた底面と地面の隙間、影の視認性、暗さの維持、画面端やLOD切替での欠落を確認する。Git remote未設定につきIssue/PR/Pages状態取得不可。デプロイ・pushなし。
+
+コミット結果: `git add` と `git commit` を試行したが、共通git管理領域の `index.lock` を作成できず両方失敗（Read-only file system）。変更は未ステージ・未コミットで作業ツリーに保存済み。
