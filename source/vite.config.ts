@@ -58,6 +58,7 @@ export default defineConfig({
         camera: "camera.html",
         terra: "terra.html",
         float: "float.html",
+        ghost: "ghost.html",
       },
     },
   },

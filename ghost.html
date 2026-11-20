@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GHOST LINES — Tokyo 3D Spike</title>
+  <style>html,body,#app{color:#e4dfd4;background:#05070a;width:100%;height:100%;margin:0;font-family:system-ui,sans-serif;overflow:hidden}header{z-index:2;pointer-events:none;max-width:calc(100% - 48px);position:absolute;top:24px;left:24px}h1{letter-spacing:.25em;margin:0 0 8px;font-size:20px;font-weight:400}p{white-space:pre-line;max-width:680px;margin:6px 0;font-size:12px;line-height:1.7}#status{color:#bac3ce}#year{letter-spacing:.18em;color:#ffd9a0;margin:2px 0 4px;font-size:34px}nav{z-index:3;gap:8px;display:flex;position:absolute;top:24px;right:24px}nav button{pointer-events:auto;color:#e4dfd4;letter-spacing:.12em;cursor:pointer;background:#10151bd1;border:1px solid #4a4438;border-radius:3px;padding:8px 14px;font-size:13px}nav button[aria-pressed=true]{color:#fff3d6;background:#8a5a1d;border-color:#ffb45e}</style>
+  <script type="module" crossorigin src="./assets/ghost-DJKbOmbr.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/three.module-CiYUBWLY.js">
+  <link rel="modulepreload" crossorigin href="./assets/dist-Bo1bttS8.js">
+</head>
+<body>
+  <div id="app"></div>
+  <header>
+    <h1>GHOST LINES</h1>
+    <div id="year">1925</div>
+    <p>千代田区＋中央区の実都市の上空 +60 m に、開業年つき鉄道路線を光の線で浮かべる3D化スパイク</p>
+    <p id="status" role="status">初期化中</p>
+    <p>国土交通省 Project PLATEAU（2023） / Re:Earth Terrain / 鉄道路線 © OpenStreetMap contributors / 開業年は検証済み年表による</p>
+  </header>
+  <nav aria-label="表示年">
+    <button id="y1900" aria-pressed="false">1900</button>
+    <button id="y1925" aria-pressed="true">1925</button>
+    <button id="y2025" aria-pressed="false">2025</button>
+  </nav>
+</body>
+</html>

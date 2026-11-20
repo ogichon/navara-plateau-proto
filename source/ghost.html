@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GHOST LINES — Tokyo 3D Spike</title>
+  <style>
+    html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#05070a;color:#e4dfd4;font-family:system-ui,sans-serif}
+    header{position:absolute;top:24px;left:24px;z-index:2;max-width:calc(100% - 48px);pointer-events:none}
+    h1{font-size:20px;font-weight:400;letter-spacing:.25em;margin:0 0 8px}
+    p{font-size:12px;line-height:1.7;margin:6px 0;max-width:680px;white-space:pre-line}
+    #status{color:#bac3ce}
+    #year{font-size:34px;letter-spacing:.18em;color:#ffd9a0;margin:2px 0 4px}
+    nav{position:absolute;top:24px;right:24px;z-index:3;display:flex;gap:8px}
+    nav button{pointer-events:auto;background:rgba(16,21,27,.82);color:#e4dfd4;border:1px solid #4a4438;
+      padding:8px 14px;font-size:13px;letter-spacing:.12em;cursor:pointer;border-radius:3px}
+    nav button[aria-pressed="true"]{background:#8a5a1d;border-color:#ffb45e;color:#fff3d6}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <header>
+    <h1>GHOST LINES</h1>
+    <div id="year">1925</div>
+    <p>千代田区＋中央区の実都市の上空 +60 m に、開業年つき鉄道路線を光の線で浮かべる3D化スパイク</p>
+    <p id="status" role="status">初期化中</p>
+    <p>国土交通省 Project PLATEAU（2023） / Re:Earth Terrain / 鉄道路線 © OpenStreetMap contributors / 開業年は検証済み年表による</p>
+  </header>
+  <nav aria-label="表示年">
+    <button id="y1900" aria-pressed="false">1900</button>
+    <button id="y1925" aria-pressed="true">1925</button>
+    <button id="y2025" aria-pressed="false">2025</button>
+  </nav>
+  <script type="module" src="/src/ghost.ts"></script>
+</body>
+</html>
