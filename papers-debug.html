@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PAPERS DEBUG — Navara × Re:Earth Papers 診断ページ</title>
   <style>html,body{color:#e8e4da;background:#0b0e12;width:100%;height:100%;margin:0;font-family:system-ui,sans-serif;overflow:hidden}#app{position:absolute;inset:0}#panel{z-index:2;background:#0a0e12d9;border:1px solid #3c4652;border-radius:4px;max-width:min(560px,100% - 24px);padding:10px 14px;font-size:12px;line-height:1.7;position:absolute;top:12px;left:12px}#panel h1{letter-spacing:.12em;margin:0 0 2px;font-size:13px;font-weight:600}#panel .desc{color:#c8d2de;margin:0 0 6px}#panel .configs a{color:#8fc1ff;margin-right:8px;text-decoration:none}#panel .configs a.current{color:#ffd479;font-weight:700;text-decoration:underline}#panel .stats{color:#c8d2de;font-variant-numeric:tabular-nums}#panel .stats b{color:#ffd479}#panel button{color:#e8e4da;cursor:pointer;background:#1c2733;border:1px solid #3c4652;border-radius:4px;margin-right:6px;padding:4px 10px;font-size:12px}#panel button:hover{background:#27384a}#panel .note{color:#7d8ea1;margin:6px 0 0;font-size:11px}#logwrap{z-index:2;position:absolute;bottom:12px;left:12px;right:12px}#logwrap h2{letter-spacing:.14em;color:#c8d2de;margin:0 0 4px;font-size:11px;font-weight:400}#log{box-sizing:border-box;color:#b9e3b0;white-space:pre;background:#06080aeb;border:1px solid #3c4652;border-radius:4px;width:100%;height:34vh;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;overflow:auto}</style>
-  <script type="module" crossorigin src="./assets/papersDebug-BlQoDGfr.js"></script>
+  <script type="module" crossorigin src="./assets/papersDebug-lh1k2TuF.js"></script>
 </head>
 <body>
   <div id="app"></div>
@@ -20,8 +20,9 @@
     <p>
       <button id="nudge" type="button">カメラを少し動かす</button>
       <button id="copy" type="button">ログをコピー</button>
+      <button id="measure" type="button">輝度を測る</button>
     </p>
-    <p class="note">構造化ログは window.__tileLog にも保持しています。Worker 内で発行されたリクエストは Resource Timing に現れない場合があります。transferSize=0 はキャッシュ / 失敗 / Timing-Allow-Origin 制限のいずれかを示します（成否の断定はできません）。</p>
+    <p class="note">構造化ログは window.__tileLog にも保持しています。Worker 内で発行されたリクエストは Resource Timing に現れない場合があります。transferSize=0 はキャッシュ / 失敗 / Timing-Allow-Origin 制限のいずれかを示します（成否の断定はできません）。「輝度を測る」はその時点の canvas 全体の平均輝度と標準偏差を [measure] 行に出します（window.__lumStats にも保持。対象は canvas 全体で、道路部分だけの分離はしていません）。</p>
   </div>
   <div id="logwrap">
     <h2>リクエストログ（時系列）</h2>
