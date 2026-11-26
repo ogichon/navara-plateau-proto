@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DISASTER SHINJUKU — 新宿区の防災マップ（Re:Earth CMS × Navara）</title>
+  <style>html,body,#app{color:#e8e4da;background:#0b0e12;width:100%;height:100%;margin:0;font-family:system-ui,sans-serif;overflow:hidden}header{z-index:2;pointer-events:none;max-width:calc(100% - 48px);position:absolute;top:24px;left:24px}h1{letter-spacing:.22em;margin:0 0 8px;font-size:20px;font-weight:400}p{white-space:pre-line;max-width:680px;margin:6px 0;font-size:12px;line-height:1.7}#status{color:#c8d2de}#layers{z-index:2;background:#0a0e12c7;border:1px solid #3c4652;border-radius:4px;min-width:210px;padding:10px 14px;font-size:12px;line-height:1.9;position:absolute;bottom:24px;left:24px}#layers h2{letter-spacing:.18em;color:#c8d2de;margin:0 0 4px;font-size:11px;font-weight:400}#layers .row{align-items:center;gap:8px;display:flex}#layers .row label{cursor:pointer;flex:1;align-items:center;gap:8px;display:flex}#layers .sw{border-radius:50%;flex:none;width:12px;height:12px;display:inline-block}#layers .count{color:#9fb0c0;margin-left:auto;padding-left:12px}#layers .src{color:#7d8ea1;font-size:11px}#layers input[type=checkbox]{accent-color:#c8d2de;flex:none}</style>
+  <script type="module" crossorigin src="./assets/disaster-DiKICNsI.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/three.module-CiYUBWLY.js">
+  <link rel="modulepreload" crossorigin href="./assets/dist-Bo1bttS8.js">
+</head>
+<body>
+  <div id="app"></div>
+  <header>
+    <h1>DISASTER SHINJUKU — 新宿区の防災マップ</h1>
+    <p>新宿区の防災施設（避難所・AED・公衆トイレ・指定緊急避難場所）を PLATEAU 3D建物の上に色分け表示します。
+データは Re:Earth CMS（test_aaa）からレイヤーごとに取得し、失敗時は同梱コピーにフォールバックします。</p>
+    <p id="status" role="status">初期化中</p>
+    <p>国土交通省 Project PLATEAU 新宿区（2023） / 防災施設データ: 新宿区オープンデータ（CC BY）</p>
+  </header>
+  <div id="layers" aria-label="レイヤー切替と凡例"><h2>レイヤー / 凡例</h2><div id="layer-rows">読み込み中</div></div>
+</body>
+</html>
